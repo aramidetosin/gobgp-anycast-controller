@@ -1,5 +1,11 @@
 # ecloud GoBGP anycast controller
 
+![GoBGP](https://img.shields.io/badge/engine-GoBGP-1971c2)
+![Python 3](https://img.shields.io/badge/python-3-3776AB?logo=python&logoColor=white)
+![BGP](https://img.shields.io/badge/BGP-EVPN%2FVXLAN-2f9e44)
+![anycast](https://img.shields.io/badge/pattern-anycast-e8590c)
+![steering](https://img.shields.io/badge/steering-health%20%2B%20latency-9c36b5)
+
 Host-based anycast controller for the ecloud two-DC fabric. Two GoBGP nodes
 (gobgp-1 active / gobgp-2 standby, AS 65400, iBGP to both br-agg switches)
 re-originate a set of VIPs, each with next-hop = the chosen DC's regional VIP
