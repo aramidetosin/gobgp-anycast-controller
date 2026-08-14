@@ -46,3 +46,20 @@ outbound on swp1/2/5/6.100 (tenant-k8s).
 ## Firewall (PA A/A)
 DNAT 10.80.15.53->.202.3 (client-1), .54->.202.4 (ext-client-2); the external
 addresses must also be in the internet-to-k8s security allow rule.
+
+## fabric/ (device-side config backups)
+The steering spans more than the controller hosts, so the device configs it
+depends on are captured here (RFC1918 addresses only, no secrets):
+
+- `fabric/aggr/br-agg-sw-{1,2}.nvue.txt` - full `nv config show -o commands` for
+  both backbone switches. The loop filter (`PL-ANYCAST-VIP` -> `RM-DENY-ANYCAST-OUT`
+  on swp1/2/5/6.100) lives here. Restore: replay the `nv set` lines, then `nv config apply`.
+- `fabric/firewall/fw-{pri,sec}.rules.set` - the NAT + security rulebases (set format)
+  from both Palo Altos: `cli1-dnat`/`cli2-dnat` and the `internet-to-k8s` allow rule
+  (which lists .53/.54). Config-write to the PANs needs an operator (host safety gate);
+  paste these into `configure` and `commit`.
+- `fabric/k8s/perclient-vips.yaml` - the CiliumLoadBalancerIPPool + `dc-demo-cli1`/`cli2`
+  LB services; `kubectl apply` to BOTH dc1 and dc2.
+
+Full device backups (interfaces, zones, HA, and every other fabric switch) live in
+the timestamped tarballs on eve-office:/root/backups/, not in this repo.

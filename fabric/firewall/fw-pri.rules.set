@@ -1,0 +1,141 @@
+set rulebase nat rules fabric-snat from [ k8s svc ]
+set rulebase nat rules fabric-snat to internet
+set rulebase nat rules fabric-snat source any
+set rulebase nat rules fabric-snat destination any
+set rulebase nat rules fabric-snat service any
+set rulebase nat rules fabric-snat active-active-device-binding 0
+set rulebase nat rules fabric-snat source-translation dynamic-ip-and-port translated-address 10.80.15.21
+set rulebase nat rules fabric-snat-1 from [ k8s svc ]
+set rulebase nat rules fabric-snat-1 to internet
+set rulebase nat rules fabric-snat-1 source any
+set rulebase nat rules fabric-snat-1 destination any
+set rulebase nat rules fabric-snat-1 service any
+set rulebase nat rules fabric-snat-1 active-active-device-binding 1
+set rulebase nat rules fabric-snat-1 source-translation dynamic-ip-and-port translated-address 10.80.15.22
+set rulebase nat rules dns-dnat-u from internet
+set rulebase nat rules dns-dnat-u to internet
+set rulebase nat rules dns-dnat-u source any
+set rulebase nat rules dns-dnat-u destination 10.80.15.41
+set rulebase nat rules dns-dnat-u service dns-u
+set rulebase nat rules dns-dnat-u active-active-device-binding both
+set rulebase nat rules dns-dnat-u destination-translation translated-address 10.167.30.10
+set rulebase nat rules dns-dnat-t from internet
+set rulebase nat rules dns-dnat-t to internet
+set rulebase nat rules dns-dnat-t source any
+set rulebase nat rules dns-dnat-t destination 10.80.15.41
+set rulebase nat rules dns-dnat-t service dns-t
+set rulebase nat rules dns-dnat-t active-active-device-binding both
+set rulebase nat rules dns-dnat-t destination-translation translated-address 10.167.30.10
+set rulebase nat rules api-dnat from internet
+set rulebase nat rules api-dnat to internet
+set rulebase nat rules api-dnat source any
+set rulebase nat rules api-dnat destination 10.80.15.40
+set rulebase nat rules api-dnat service k8s-api
+set rulebase nat rules api-dnat active-active-device-binding both
+set rulebase nat rules api-dnat destination-translation translated-address 10.167.10.100
+set rulebase nat rules gw-dnat from internet
+set rulebase nat rules gw-dnat to internet
+set rulebase nat rules gw-dnat source any
+set rulebase nat rules gw-dnat destination 10.80.15.40
+set rulebase nat rules gw-dnat service any
+set rulebase nat rules gw-dnat active-active-device-binding both
+set rulebase nat rules gw-dnat destination-translation translated-address 192.168.200.0
+set rulebase nat rules api-dnat-dc2 from internet
+set rulebase nat rules api-dnat-dc2 to internet
+set rulebase nat rules api-dnat-dc2 source any
+set rulebase nat rules api-dnat-dc2 destination 10.80.15.42
+set rulebase nat rules api-dnat-dc2 service tcp-6443
+set rulebase nat rules api-dnat-dc2 active-active-device-binding both
+set rulebase nat rules api-dnat-dc2 destination-translation translated-address 10.168.10.100
+set rulebase nat rules gw-dnat-dc2 from internet
+set rulebase nat rules gw-dnat-dc2 to internet
+set rulebase nat rules gw-dnat-dc2 source any
+set rulebase nat rules gw-dnat-dc2 destination 10.80.15.42
+set rulebase nat rules gw-dnat-dc2 service any
+set rulebase nat rules gw-dnat-dc2 active-active-device-binding both
+set rulebase nat rules gw-dnat-dc2 destination-translation translated-address 192.168.201.0
+set rulebase nat rules gw-dnat-anycast from internet
+set rulebase nat rules gw-dnat-anycast to internet
+set rulebase nat rules gw-dnat-anycast source any
+set rulebase nat rules gw-dnat-anycast destination 10.80.15.50
+set rulebase nat rules gw-dnat-anycast service any
+set rulebase nat rules gw-dnat-anycast active-active-device-binding both
+set rulebase nat rules gw-dnat-anycast destination-translation translated-address 192.168.202.0
+set rulebase nat rules gw-dnat-reg-dc1 from internet
+set rulebase nat rules gw-dnat-reg-dc1 to internet
+set rulebase nat rules gw-dnat-reg-dc1 source any
+set rulebase nat rules gw-dnat-reg-dc1 destination 10.80.15.51
+set rulebase nat rules gw-dnat-reg-dc1 service any
+set rulebase nat rules gw-dnat-reg-dc1 active-active-device-binding both
+set rulebase nat rules gw-dnat-reg-dc1 destination-translation translated-address 192.168.202.1
+set rulebase nat rules gw-dnat-reg-dc2 from internet
+set rulebase nat rules gw-dnat-reg-dc2 to internet
+set rulebase nat rules gw-dnat-reg-dc2 source any
+set rulebase nat rules gw-dnat-reg-dc2 destination 10.80.15.52
+set rulebase nat rules gw-dnat-reg-dc2 service any
+set rulebase nat rules gw-dnat-reg-dc2 active-active-device-binding both
+set rulebase nat rules gw-dnat-reg-dc2 destination-translation translated-address 192.168.202.2
+set rulebase nat rules cli1-dnat from internet
+set rulebase nat rules cli1-dnat to internet
+set rulebase nat rules cli1-dnat source any
+set rulebase nat rules cli1-dnat destination 10.80.15.53
+set rulebase nat rules cli1-dnat service any
+set rulebase nat rules cli1-dnat destination-translation translated-address 192.168.202.3
+set rulebase nat rules cli1-dnat active-active-device-binding both
+set rulebase nat rules cli2-dnat from internet
+set rulebase nat rules cli2-dnat to internet
+set rulebase nat rules cli2-dnat source any
+set rulebase nat rules cli2-dnat destination 10.80.15.54
+set rulebase nat rules cli2-dnat service any
+set rulebase nat rules cli2-dnat destination-translation translated-address 192.168.202.4
+set rulebase nat rules cli2-dnat active-active-device-binding both
+set rulebase security rules k8s-to-svc from k8s
+set rulebase security rules k8s-to-svc to svc
+set rulebase security rules k8s-to-svc source any
+set rulebase security rules k8s-to-svc destination any
+set rulebase security rules k8s-to-svc application [ dns ntp ping ]
+set rulebase security rules k8s-to-svc service application-default
+set rulebase security rules k8s-to-svc action allow
+set rulebase security rules k8s-to-internet from k8s
+set rulebase security rules k8s-to-internet to internet
+set rulebase security rules k8s-to-internet source any
+set rulebase security rules k8s-to-internet destination any
+set rulebase security rules k8s-to-internet application any
+set rulebase security rules k8s-to-internet service any
+set rulebase security rules k8s-to-internet action allow
+set rulebase security rules svc-to-internet from svc
+set rulebase security rules svc-to-internet to internet
+set rulebase security rules svc-to-internet source any
+set rulebase security rules svc-to-internet destination any
+set rulebase security rules svc-to-internet application any
+set rulebase security rules svc-to-internet service any
+set rulebase security rules svc-to-internet action allow
+set rulebase security rules internet-to-k8s from internet
+set rulebase security rules internet-to-k8s to k8s
+set rulebase security rules internet-to-k8s source any
+set rulebase security rules internet-to-k8s destination [ 10.80.15.40 10.80.15.42 10.80.15.50 10.80.15.51 10.80.15.52 10.80.15.53 10.80.15.54 ]
+set rulebase security rules internet-to-k8s application [ ssl web-browsing ]
+set rulebase security rules internet-to-k8s service any
+set rulebase security rules internet-to-k8s action allow
+set rulebase security rules internet-to-svc from internet
+set rulebase security rules internet-to-svc to svc
+set rulebase security rules internet-to-svc source any
+set rulebase security rules internet-to-svc destination 10.80.15.41
+set rulebase security rules internet-to-svc application dns
+set rulebase security rules internet-to-svc service application-default
+set rulebase security rules internet-to-svc action allow
+set rulebase security rules svc-to-k8s from svc
+set rulebase security rules svc-to-k8s to k8s
+set rulebase security rules svc-to-k8s source any
+set rulebase security rules svc-to-k8s destination 10.167.10.100
+set rulebase security rules svc-to-k8s application any
+set rulebase security rules svc-to-k8s service any
+set rulebase security rules svc-to-k8s action allow
+set rulebase security rules internet-to-api from internet
+set rulebase security rules internet-to-api to k8s
+set rulebase security rules internet-to-api source any
+set rulebase security rules internet-to-api destination [ 10.80.15.40 10.80.15.42 ]
+set rulebase security rules internet-to-api service tcp-6443
+set rulebase security rules internet-to-api application any
+set rulebase security rules internet-to-api action allow
+set rulebase security rules internet-to-api log-end yes
