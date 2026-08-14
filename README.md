@@ -54,9 +54,9 @@ RFC1918 addresses only; the SNMP community is redacted; no credentials.
 - `fabric/dc1/` - all 10 DC1 Cumulus switches (spine-1/2, leaf-k8s-master-1/2,
   leaf-k8s-worker-1/2, leaf-service-1/2, leaf-border-1/2), `nv config show -o commands`.
 - `fabric/dc2/` - all 8 DC2 Cumulus switches (dc2-spine-1/2, dc2-k8s-leaf-1/2,
-  dc2-svc-leaf-1/2, dc2-border-1/2). NOTE: dc2-spine-1, dc2-spine-2 and dc2-k8s-leaf-1
-  were powered off at capture, so their files carry the last-known config from the most
-  recent DC2 backup (marked with a `# LAST-KNOWN` header).
+  dc2-svc-leaf-1/2, dc2-border-1/2), all captured live. dc2-spine-1/2 and dc2-k8s-leaf-1
+  have no mgmt DHCP lease (unreachable over SSH), so they were captured over the EVE-NG
+  console instead; their configs are intact (hostname + BGP present).
 - `fabric/aggr/` - the two backbone switches (br-agg-sw-1/2, AS 65400). The anycast loop
   filter (`PL-ANYCAST-VIP` -> `RM-DENY-ANYCAST-OUT` on swp1/2/5/6.100) lives here.
 - `fabric/firewall/fw-{pri,sec}.rules.set` - both Palo Altos, NAT + security rulebases
