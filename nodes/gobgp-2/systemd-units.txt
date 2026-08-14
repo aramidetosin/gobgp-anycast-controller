@@ -1,0 +1,23 @@
+# /etc/systemd/system/gobgp-brain.service
+[Unit]
+Description=ecloud anycast controller brain
+After=gobgpd.service network-online.target
+Wants=gobgpd.service
+[Service]
+ExecStart=/usr/bin/python3 /opt/gobgp-brain/controller_brain.py
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+
+# /etc/systemd/system/gobgpd.service
+[Unit]
+Description=GoBGP daemon
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/usr/local/bin/gobgpd -f /etc/gobgp/gobgpd.conf --api-hosts 127.0.0.1:50051
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
