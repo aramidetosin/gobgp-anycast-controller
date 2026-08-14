@@ -47,19 +47,24 @@ outbound on swp1/2/5/6.100 (tenant-k8s).
 DNAT 10.80.15.53->.202.3 (client-1), .54->.202.4 (ext-client-2); the external
 addresses must also be in the internet-to-k8s security allow rule.
 
-## fabric/ (device-side config backups)
-The steering spans more than the controller hosts, so the device configs it
-depends on are captured here (RFC1918 addresses only, no secrets):
+## fabric/ (complete device config backup)
+The whole two-DC fabric, captured live by hostname (mgmt IPs are DHCP and drift).
+RFC1918 addresses only; the SNMP community is redacted; no credentials.
 
-- `fabric/aggr/br-agg-sw-{1,2}.nvue.txt` - full `nv config show -o commands` for
-  both backbone switches. The loop filter (`PL-ANYCAST-VIP` -> `RM-DENY-ANYCAST-OUT`
-  on swp1/2/5/6.100) lives here. Restore: replay the `nv set` lines, then `nv config apply`.
-- `fabric/firewall/fw-{pri,sec}.rules.set` - the NAT + security rulebases (set format)
-  from both Palo Altos: `cli1-dnat`/`cli2-dnat` and the `internet-to-k8s` allow rule
-  (which lists .53/.54). Config-write to the PANs needs an operator (host safety gate);
-  paste these into `configure` and `commit`.
+- `fabric/dc1/` - all 10 DC1 Cumulus switches (spine-1/2, leaf-k8s-master-1/2,
+  leaf-k8s-worker-1/2, leaf-service-1/2, leaf-border-1/2), `nv config show -o commands`.
+- `fabric/dc2/` - all 8 DC2 Cumulus switches (dc2-spine-1/2, dc2-k8s-leaf-1/2,
+  dc2-svc-leaf-1/2, dc2-border-1/2). NOTE: dc2-spine-1, dc2-spine-2 and dc2-k8s-leaf-1
+  were powered off at capture, so their files carry the last-known config from the most
+  recent DC2 backup (marked with a `# LAST-KNOWN` header).
+- `fabric/aggr/` - the two backbone switches (br-agg-sw-1/2, AS 65400). The anycast loop
+  filter (`PL-ANYCAST-VIP` -> `RM-DENY-ANYCAST-OUT` on swp1/2/5/6.100) lives here.
+- `fabric/firewall/fw-{pri,sec}.rules.set` - both Palo Altos, NAT + security rulebases
+  (set format): `cli1-dnat`/`cli2-dnat` and the `internet-to-k8s` allow (with .53/.54).
+  Writing to the PANs needs an operator (host safety gate); paste into `configure` + `commit`.
 - `fabric/k8s/perclient-vips.yaml` - the CiliumLoadBalancerIPPool + `dc-demo-cli1`/`cli2`
   LB services; `kubectl apply` to BOTH dc1 and dc2.
 
-Full device backups (interfaces, zones, HA, and every other fabric switch) live in
-the timestamped tarballs on eve-office:/root/backups/, not in this repo.
+Restore a Cumulus switch: replay its `nv set` lines, then `nv config apply`.
+Full PAN config (interfaces/zones/HA/credentials) and host archives stay in the
+timestamped tarballs on eve-office:/root/backups/, not in this repo.
