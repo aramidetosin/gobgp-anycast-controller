@@ -24,11 +24,11 @@ els.append(text(1300,120, "KUBERNETES", 12, PURPLE))
 service = [
  dict(n="DC1 leaf",   r="into L3VNI",     t="L3",         c=BLUE,   bg=SB, d=["worker-leaf","VTEP 10.0.0.13","VXLAN encap"]),
  dict(n="DC1 spine",  r="underlay",       t="underlay",   c=BLUE,   bg=SB, d=["routes by","outer VTEP","out swp7"]),
- dict(n="DC1 border", r="decap to route", t="overlay>L3", c=BLUE,   bg=SB, d=["decap VXLAN","out swp3.100","to backbone"]),
+ dict(n="DC1 border", r="decap to route", t="overlay>L3", c=BLUE,   bg=SB, d=["VTEP 10.0.0.17","decap to swp3.100","to backbone"]),
  dict(n="br-agg",     r="routed backbone",t="L3 routed",  c=GREEN,  bg=SG, d=["tenant-k8s VRF","ECMP","swp5/6.100"]),
- dict(n="DC2 border", r="route to encap", t="L3>overlay", c=ORANGE, bg=SO, d=["into vlan3101_l3","VTEP 10.2.0.11","re-encap"]),
+ dict(n="DC2 border", r="route to encap", t="L3>overlay", c=ORANGE, bg=SO, d=["VTEP 10.2.0.15","into vlan3101_l3","re-encap"]),
  dict(n="DC2 spine",  r="underlay",       t="underlay",   c=ORANGE, bg=SO, d=["routes by","outer VTEP"]),
- dict(n="DC2 leaf",   r="decap to node",  t="overlay>L2", c=ORANGE, bg=SO, d=["to workers","10.168.10.21/.22","vlan210 (L2VNI 10210)"]),
+ dict(n="DC2 leaf",   r="decap to node",  t="overlay>L2", c=ORANGE, bg=SO, d=["VTEP 10.2.0.11","to pod workers .2x","vlan210 (L2VNI 10210)"]),
  dict(n="DC2 node",   r="pod, then app",  t="L4 to L7",   c=PURPLE, bg=SP, d=["pod 10.245.x","TCP :8080","HTTP: 'DC2 demo'"]),
 ]
 x0, step, w, by, bh = 25, 178, 152, 200, 82
