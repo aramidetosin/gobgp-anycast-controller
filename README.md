@@ -55,6 +55,9 @@ The whole two-DC fabric is captured live by hostname (mgmt IPs are DHCP and drif
 - `fabric-mlag/`    Design A: MLAG (clag + peerlink), shared anycast VTEP (the original build).
 - `fabric-evpn-mh/` Design B: EVPN Multihoming (ESI) + independent-VTEP borders (migrated 2026-08-15).
 
+Runbook: [TRACING.md](TRACING.md) shows the command per device to trace a MAC (L2, in a DC)
+or a service/IP (L3, across both DCs), with a live worked example and each stage explained.
+
 Each design dir has the same layout (only the leaf/border configs differ between them):
 
 - `dc1/` - all 10 DC1 Cumulus switches (spine-1/2, leaf-k8s-master-1/2,
