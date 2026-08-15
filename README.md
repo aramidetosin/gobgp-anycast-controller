@@ -58,7 +58,7 @@ The whole two-DC fabric is captured live by hostname (mgmt IPs are DHCP and drif
 Runbooks:
 - [TRACING.md](TRACING.md) traces a MAC (L2, in a DC) or a service/IP (L3, across both DCs)
   per device, L1 to L7, with a live worked example and each stage explained.
-- [MAC-TRACE.md](MAC-TRACE.md) traces a MAC end-to-end in Nexus troubleshooting order
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) is the line-by-line NX-OS to Cumulus troubleshooting guide
   (underlay, EVPN control plane, VXLAN data plane, L2, L3, multihoming, health), with an
   NX-OS to Cumulus command map.
 
