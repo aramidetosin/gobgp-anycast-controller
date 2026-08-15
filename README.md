@@ -55,8 +55,12 @@ The whole two-DC fabric is captured live by hostname (mgmt IPs are DHCP and drif
 - `fabric-mlag/`    Design A: MLAG (clag + peerlink), shared anycast VTEP (the original build).
 - `fabric-evpn-mh/` Design B: EVPN Multihoming (ESI) + independent-VTEP borders (migrated 2026-08-15).
 
-Runbook: [TRACING.md](TRACING.md) shows the command per device to trace a MAC (L2, in a DC)
-or a service/IP (L3, across both DCs), with a live worked example and each stage explained.
+Runbooks:
+- [TRACING.md](TRACING.md) traces a MAC (L2, in a DC) or a service/IP (L3, across both DCs)
+  per device, L1 to L7, with a live worked example and each stage explained.
+- [MAC-TRACE.md](MAC-TRACE.md) traces a MAC end-to-end in Nexus troubleshooting order
+  (underlay, EVPN control plane, VXLAN data plane, L2, L3, multihoming, health), with an
+  NX-OS to Cumulus command map.
 
 Each design dir has the same layout (only the leaf/border configs differ between them):
 
