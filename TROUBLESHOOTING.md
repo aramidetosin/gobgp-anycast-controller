@@ -405,3 +405,36 @@ Cilium node sessions, which flap whenever nodes or pods move. Fabric adjacencies
 Plus the two Cumulus-specific traps: `bridge fdb show` **must run under sudo**, and on
 the key-only backbone switches `sudo vtysh` needs the password piped or output comes
 back empty.
+
+## Case: client can ping IPs but names fail intermittently (fixed 2026-08-15)
+
+Reported on client-1: "can ping the IP but not the DNS". Diagnosis, in order:
+
+1. **Resolver state** - `resolvectl status` showed **two DNS scopes and no routing
+   domains**: mgmt link with public servers (8.8.8.8 / 1.1.1.1), lab link with the lab
+   BIND VIP (`10.80.15.41`). systemd-resolved raced `.lab` queries across both; a fast
+   public **NXDOMAIN beat the lab server's positive answer** some of the time. That is
+   why it was intermittent and self-recovering.
+2. **Reachability of the DNS VIP** - ping and tcp/53 to `10.80.15.41` were clean, and
+   `dig @10.80.15.41` answered: the server and the fabric path were healthy. (Earlier in
+   the day the tenant-svc path had real blips during the EVPN-MH work; resolved would
+   have marked the lab server bad and leaned on the public servers, which can never
+   resolve `.lab` - the visible episode.)
+3. **Fix (both clients, .89 and .96), persistent and renderer-agnostic**:
+```
+# /etc/systemd/resolved.conf.d/90-ecloud-lab.conf
+[Resolve]
+DNS=10.80.15.41
+Domains=~ecloud.lab ~lab
+# then: systemctl restart systemd-resolved
+```
+4. **Verify** - `resolvectl status` Global scope shows `DNS Domain: ~ecloud.lab ~lab`;
+   15/15 rapid `dig demo.apps.ecloud.lab` return `10.80.15.50`; `dig google.com` still
+   answers (public path untouched); end-to-end `curl http://demo.apps.ecloud.lab/api/whoami`
+   returns the serving pod.
+
+Two traps from doing it: piping content into `sudo -S tee` writes an **empty file**
+(the pipe feeds sudo's password prompt) - use `echo <pw> | sudo -S bash -c 'printf ... > file'`
+and read the file back. And a split-scope resolver failure looks exactly like a fabric
+problem from the application's point of view; check `resolvectl status` for missing
+routing domains before tracing the network.
