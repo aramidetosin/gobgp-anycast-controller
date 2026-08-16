@@ -1,0 +1,250 @@
+# ecloud two-DC EVPN-VXLAN POC, replicated in containerlab.
+# Generated from the authoritative EVE-NG link map (84 p2p links + 1 shared internet segment).
+# Switches: Cumulus VX 5.12.0 (vrnetlab VM-in-container). Firewalls: PA-VM 12.1.2 (vrnetlab).
+# Hosts: plain linux containers, provisioned after deploy (k8s/Cilium, BIND, GoBGP, clients).
+# NOTE: the nvidia_cumulusvx kind does NOT apply startup-config (verified in source: it only mounts
+# /config as a persistent overlay + sets creds/hostname). Switch configs are pushed POST-deploy by
+# push_configs.sh (SSH nv-set replay from fabric-evpn-mh/, or NVUE REST :8765). Creds cumulus/Clab123!.
+name: ecloud
+mgmt:
+  network: ecloud-mgmt
+  ipv4-subnet: 172.29.129.0/24     # same mgmt /24 as the EVE lab, but STATIC (no DHCP drift)
+topology:
+  kinds:
+    nvidia_cumulusvx:
+      image: vrnetlab/nvidia_cumulus-vx:5.12.0
+    paloalto_panos:
+      image: vrnetlab/vr-pan:12.1.2
+    linux:
+      image: ubuntu:24.04
+  nodes:
+    spine-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.11
+      group: dc1
+    spine-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.12
+      group: dc1
+    leaf-k8s-master-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.13
+      group: dc1
+    leaf-k8s-master-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.14
+      group: dc1
+    leaf-k8s-worker-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.15
+      group: dc1
+    leaf-k8s-worker-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.16
+      group: dc1
+    leaf-service-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.17
+      group: dc1
+    leaf-service-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.18
+      group: dc1
+    leaf-border-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.19
+      group: dc1
+    leaf-border-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.20
+      group: dc1
+    dc2-spine-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.21
+      group: dc2
+    dc2-spine-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.22
+      group: dc2
+    dc2-k8s-leaf-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.23
+      group: dc2
+    dc2-k8s-leaf-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.24
+      group: dc2
+    dc2-svc-leaf-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.25
+      group: dc2
+    dc2-svc-leaf-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.26
+      group: dc2
+    dc2-border-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.27
+      group: dc2
+    dc2-border-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.28
+      group: dc2
+    br-agg-sw-1:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.29
+      group: aggr
+    br-agg-sw-2:
+      kind: nvidia_cumulusvx
+      mgmt-ipv4: 172.29.129.30
+      group: aggr
+    fw-pri:
+      kind: paloalto_panos
+      mgmt-ipv4: 172.29.129.31
+      group: firewall
+    fw-sec:
+      kind: paloalto_panos
+      mgmt-ipv4: 172.29.129.32
+      group: firewall
+    k8s-master-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.33
+      group: dc1-hosts
+    k8s-master-2:
+      kind: linux
+      mgmt-ipv4: 172.29.129.34
+      group: dc1-hosts
+    k8s-master-3:
+      kind: linux
+      mgmt-ipv4: 172.29.129.35
+      group: dc1-hosts
+    k8s-woker-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.36
+      group: dc1-hosts
+    k8s-woker-2:
+      kind: linux
+      mgmt-ipv4: 172.29.129.37
+      group: dc1-hosts
+    k8s-woker-3:
+      kind: linux
+      mgmt-ipv4: 172.29.129.38
+      group: dc1-hosts
+    service-node-dns-ntp:
+      kind: linux
+      mgmt-ipv4: 172.29.129.39
+      group: dc1-hosts
+    client-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.40
+      group: clients
+    external-client-2:
+      kind: linux
+      mgmt-ipv4: 172.29.129.41
+      group: clients
+    gobgp-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.42
+      group: controllers
+    gobgp-2:
+      kind: linux
+      mgmt-ipv4: 172.29.129.43
+      group: controllers
+    dc2-k8s-master-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.44
+      group: dc2-hosts
+    dc2-k8s-worker-1:
+      kind: linux
+      mgmt-ipv4: 172.29.129.45
+      group: dc2-hosts
+    dc2-k8s-worker-2:
+      kind: linux
+      mgmt-ipv4: 172.29.129.46
+      group: dc2-hosts
+    dc2-k8s-worker-3:
+      kind: linux
+      mgmt-ipv4: 172.29.129.47
+      group: dc2-hosts
+    dc2-svc-ntp-dns:
+      kind: linux
+      mgmt-ipv4: 172.29.129.48
+      group: dc2-hosts
+    internet:
+      kind: bridge     # = EVE net54 (10.80.15.0/24): PAN eth1/3 x2 + client-1 + external-client-2
+  links:
+    - endpoints: ["spine-1:swp1", "leaf-k8s-master-1:swp1"]
+    - endpoints: ["spine-1:swp2", "leaf-k8s-master-2:swp1"]
+    - endpoints: ["spine-1:swp3", "leaf-k8s-worker-1:swp1"]
+    - endpoints: ["spine-1:swp4", "leaf-k8s-worker-2:swp1"]
+    - endpoints: ["spine-1:swp5", "leaf-service-1:swp1"]
+    - endpoints: ["spine-1:swp6", "leaf-service-2:swp1"]
+    - endpoints: ["spine-1:swp7", "leaf-border-1:swp1"]
+    - endpoints: ["spine-1:swp8", "leaf-border-2:swp1"]
+    - endpoints: ["spine-2:swp1", "leaf-k8s-master-1:swp2"]
+    - endpoints: ["spine-2:swp2", "leaf-k8s-master-2:swp2"]
+    - endpoints: ["spine-2:swp3", "leaf-k8s-worker-1:swp2"]
+    - endpoints: ["spine-2:swp4", "leaf-k8s-worker-2:swp2"]
+    - endpoints: ["spine-2:swp5", "leaf-service-1:swp2"]
+    - endpoints: ["spine-2:swp6", "leaf-service-2:swp2"]
+    - endpoints: ["spine-2:swp7", "leaf-border-1:swp2"]
+    - endpoints: ["spine-2:swp8", "leaf-border-2:swp2"]
+    - endpoints: ["leaf-k8s-master-1:swp3", "k8s-master-1:eth1"]
+    - endpoints: ["leaf-k8s-master-2:swp3", "k8s-master-1:eth2"]
+    - endpoints: ["leaf-k8s-master-1:swp4", "k8s-master-2:eth1"]
+    - endpoints: ["leaf-k8s-master-2:swp4", "k8s-master-2:eth2"]
+    - endpoints: ["leaf-k8s-master-1:swp5", "k8s-master-3:eth1"]
+    - endpoints: ["leaf-k8s-master-2:swp5", "k8s-master-3:eth2"]
+    - endpoints: ["leaf-k8s-worker-1:swp3", "k8s-woker-1:eth1"]
+    - endpoints: ["leaf-k8s-worker-2:swp3", "k8s-woker-1:eth2"]
+    - endpoints: ["leaf-k8s-worker-1:swp4", "k8s-woker-2:eth1"]
+    - endpoints: ["leaf-k8s-worker-2:swp4", "k8s-woker-2:eth2"]
+    - endpoints: ["leaf-k8s-worker-1:swp5", "k8s-woker-3:eth1"]
+    - endpoints: ["leaf-k8s-worker-2:swp5", "k8s-woker-3:eth2"]
+    - endpoints: ["leaf-service-1:swp3", "service-node-dns-ntp:eth1"]
+    - endpoints: ["leaf-service-2:swp3", "service-node-dns-ntp:eth2"]
+    - endpoints: ["leaf-border-1:swp3", "br-agg-sw-1:swp1"]
+    - endpoints: ["leaf-border-2:swp3", "br-agg-sw-1:swp2"]
+    - endpoints: ["fw-sec:eth1", "br-agg-sw-1:swp4"]
+    - endpoints: ["leaf-border-2:swp4", "br-agg-sw-2:swp2"]
+    - endpoints: ["fw-pri:eth1", "br-agg-sw-1:swp3"]
+    - endpoints: ["dc2-border-2:swp3", "br-agg-sw-1:swp6"]
+    - endpoints: ["leaf-border-1:swp4", "br-agg-sw-2:swp1"]
+    - endpoints: ["fw-sec:eth2", "br-agg-sw-2:swp4"]
+    - endpoints: ["dc2-border-1:swp3", "br-agg-sw-1:swp5"]
+    - endpoints: ["fw-pri:eth2", "br-agg-sw-2:swp3"]
+    - endpoints: ["dc2-border-1:swp4", "br-agg-sw-2:swp5"]
+    - endpoints: ["fw-pri:eth5", "fw-sec:eth5"]
+    - endpoints: ["fw-pri:eth6", "fw-sec:eth6"]
+    - endpoints: ["fw-pri:eth7", "fw-sec:eth7"]
+    - endpoints: ["dc2-spine-1:swp1", "dc2-k8s-leaf-1:swp1"]
+    - endpoints: ["dc2-spine-1:swp2", "dc2-k8s-leaf-2:swp1"]
+    - endpoints: ["dc2-spine-1:swp3", "dc2-svc-leaf-1:swp1"]
+    - endpoints: ["dc2-spine-1:swp4", "dc2-svc-leaf-2:swp1"]
+    - endpoints: ["dc2-spine-1:swp5", "dc2-border-1:swp1"]
+    - endpoints: ["dc2-spine-1:swp6", "dc2-border-2:swp1"]
+    - endpoints: ["dc2-spine-2:swp1", "dc2-k8s-leaf-1:swp2"]
+    - endpoints: ["dc2-spine-2:swp2", "dc2-k8s-leaf-2:swp2"]
+    - endpoints: ["dc2-spine-2:swp3", "dc2-svc-leaf-1:swp2"]
+    - endpoints: ["dc2-spine-2:swp4", "dc2-svc-leaf-2:swp2"]
+    - endpoints: ["dc2-spine-2:swp5", "dc2-border-1:swp2"]
+    - endpoints: ["dc2-spine-2:swp6", "dc2-border-2:swp2"]
+    - endpoints: ["dc2-k8s-leaf-1:swp3", "dc2-k8s-master-1:eth1"]
+    - endpoints: ["dc2-k8s-leaf-2:swp3", "dc2-k8s-master-1:eth2"]
+    - endpoints: ["dc2-k8s-leaf-1:swp4", "dc2-k8s-worker-1:eth1"]
+    - endpoints: ["dc2-k8s-leaf-2:swp4", "dc2-k8s-worker-1:eth2"]
+    - endpoints: ["dc2-k8s-leaf-1:swp5", "dc2-k8s-worker-2:eth1"]
+    - endpoints: ["dc2-k8s-leaf-2:swp5", "dc2-k8s-worker-2:eth2"]
+    - endpoints: ["dc2-k8s-leaf-1:swp6", "dc2-k8s-worker-3:eth1"]
+    - endpoints: ["dc2-k8s-leaf-2:swp6", "dc2-k8s-worker-3:eth2"]
+    - endpoints: ["dc2-svc-leaf-1:swp3", "dc2-svc-ntp-dns:eth1"]
+    - endpoints: ["dc2-svc-leaf-2:swp3", "dc2-svc-ntp-dns:eth2"]
+    - endpoints: ["dc2-border-2:swp4", "br-agg-sw-2:swp6"]
+    - endpoints: ["gobgp-1:eth1", "br-agg-sw-1:swp7"]
+    - endpoints: ["gobgp-1:eth2", "br-agg-sw-2:swp7"]
+    - endpoints: ["br-agg-sw-1:swp8", "gobgp-2:eth1"]
+    - endpoints: ["br-agg-sw-2:swp8", "gobgp-2:eth2"]
+    - endpoints: ["fw-pri:eth3", "internet:fw-pri"]
+    - endpoints: ["fw-sec:eth3", "internet:fw-sec"]
+    - endpoints: ["client-1:eth1", "internet:client-1"]
+    - endpoints: ["external-client-2:eth1", "internet:external-client-2"]
