@@ -2,8 +2,9 @@
 
 A faithful containerlab replica of the ecloud POC: **39 nodes, 75 links**, generated from
 the authoritative EVE-NG link map (every p2p link captured live 2026-08-17, none inferred).
-Target host: `home-eve` (96 cores, 314GB RAM, bare-metal KVM, containerlab 0.78.2). The
-whole lab fits with room to spare.
+Lab lives at `/root/containerlab/ecloud/` on `home-eve` (96 cores, 314GB RAM, bare-metal KVM,
+containerlab 0.78.2, vrnetlab checkout at `/root/containerlab/vrnetlab` updated to 2026-07-23).
+The whole lab fits with room to spare.
 
 ## Research findings that shaped this (verified, not assumed)
 
@@ -49,10 +50,10 @@ is a declarative, git-versioned, one-command (`clab deploy`) reproducible lab, n
 
 ## Deploy sequence
 ```bash
-# 0) images (qcow2s already staged on home-eve:~/ecloud-clab/images/)
-git clone https://github.com/srl-labs/vrnetlab && cd vrnetlab
-cp ~/ecloud-clab/images/cumulus-linux-5.12.0-vx-amd64-qemu.qcow2 nvidia/cumulus-vx/ && (cd nvidia/cumulus-vx && make)
-cp ~/ecloud-clab/images/PA-VM-KVM-12.1.2.qcow2 paloalto/pan/ && (cd paloalto/pan && make)
+# 0) images  (or just: ./build_images.sh) (qcow2s already staged on home-eve:/root/containerlab/ecloud/images/)
+cd /root/containerlab/vrnetlab      # already checked out; updated to 2026-07-23 (has nvidia/cumulus-vx)
+cp /root/containerlab/ecloud/images/cumulus-linux-5.12.0-vx-amd64-qemu.qcow2 nvidia/cumulus-vx/ && (cd nvidia/cumulus-vx && make)
+cp /root/containerlab/ecloud/images/PA-VM-KVM-12.1.2.qcow2 paloalto/pan/ && (cd paloalto/pan && make)
 #    -> vrnetlab/nvidia_cumulus-vx:5.12.0 , vrnetlab/vr-pan:12.1.2
 
 # 1) deploy the topology (switches take 2-4 min each to become healthy; they boot in parallel)
