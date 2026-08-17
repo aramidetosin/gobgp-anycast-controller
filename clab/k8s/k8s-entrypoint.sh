@@ -59,7 +59,10 @@ echo "user:Test123"  | chpasswd 2>/dev/null || true
 echo "root:Test123"  | chpasswd 2>/dev/null || true
 echo "admin:admin"   | chpasswd 2>/dev/null || true
 pgrep -x dropbear >/dev/null 2>&1 || (mkdir -p /etc/dropbear; dropbear -R -p 22 >/dev/null 2>&1) || true
-log "sshd (dropbear) up; login admin/admin or user|root/Test123"
+# kubectl for operators: k3s is called as kubectl via a symlink; KUBECONFIG set system-wide
+ln -sf /usr/local/bin/k3s /usr/bin/kubectl 2>/dev/null || true
+printf 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml\nexport PATH=$PATH:/usr/local/bin\n' > /etc/profile.d/k3s.sh 2>/dev/null || true
+log "sshd (dropbear) up; login admin/admin or user|root/Test123; kubectl ready on masters"
 
 # ---- 3c) cluster self-config: the cluster-init master installs Cilium + BGP + the dc-demo app
 #         in the background once the cluster forms (idempotent; makes the k8s layer bootstrap too) ----
@@ -71,7 +74,7 @@ fi
 # ---- 4) launch k3s by role, SUPERVISED (entrypoint stays PID 1 so a k3s crash does not kill the
 #         container and lose the clab-wired interfaces). Join roles wait for the server API first. ----
 KA="--kubelet-arg=cgroups-per-qos=false --kubelet-arg=enforce-node-allocatable= --kubelet-arg=fail-swap-on=false"
-COMMON="--flannel-backend=none --disable-network-policy --disable=traefik --disable=servicelb --disable-kube-proxy --snapshotter=native $KA"
+COMMON="--flannel-backend=none --disable-network-policy --disable=traefik --disable=servicelb --disable-kube-proxy --snapshotter=native --write-kubeconfig-mode=644 $KA"
 build_cmd() {
   case "$K3S_ROLE" in
     server-init) echo "server --cluster-init --token $K3S_TOKEN --node-ip $NODE_IP --advertise-address $NODE_IP --tls-san $NODE_IP $COMMON" ;;
