@@ -39,8 +39,10 @@ for i in $(seq 1 60); do
   sleep 8
 done
 
-# 4) apply the per-DC BGP config + the dc-demo app (idempotent)
-[ -f "/opt/ecloud/bgp-$DC.yaml" ]     && { $K apply -f "/opt/ecloud/bgp-$DC.yaml" >/dev/null 2>&1;     log "applied bgp-$DC"; }
-[ -f "/opt/ecloud/dc-demo-$DC.yaml" ] && { $K apply -f "/opt/ecloud/dc-demo-$DC.yaml" >/dev/null 2>&1; log "applied dc-demo-$DC"; }
+# 4) apply the per-DC BGP config + the dc-demo app + the per-client steering VIPs (idempotent).
+# perclient-vips is DC-agnostic: both DCs advertise .202.3 and .202.4, the GoBGP brain steers each.
+[ -f "/opt/ecloud/bgp-$DC.yaml" ]        && { $K apply -f "/opt/ecloud/bgp-$DC.yaml" >/dev/null 2>&1;        log "applied bgp-$DC"; }
+[ -f "/opt/ecloud/dc-demo-$DC.yaml" ]    && { $K apply -f "/opt/ecloud/dc-demo-$DC.yaml" >/dev/null 2>&1;    log "applied dc-demo-$DC"; }
+[ -f "/opt/ecloud/perclient-vips.yaml" ] && { $K apply -f "/opt/ecloud/perclient-vips.yaml" >/dev/null 2>&1; log "applied perclient-vips"; }
 log "cluster bootstrap complete"
 $K get nodes

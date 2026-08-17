@@ -65,27 +65,69 @@ def k8s_env(name):
         env["ECLOUD_EXPECT_NODES"] = str(len(c["control-plane"]) + len(c["workers"]))
     return env
 
-def bond_script(name, ip, gw, dns, mac):
+def bond_script(name, ip, gw, dns, mac, extra=""):
+    # first-boot L2/L3 bootstrap = the real host's netplan 01-fabric.yaml, as a script. bond0 =
+    # 802.3ad fast-LACP, l3+4 hash, MTU 9000 over data0(eth1)+data1(eth2). The bond is created only
+    # if absent; SSH + the optional `extra` daemon block run every time so re-running is safe.
     return f"""#!/bin/sh
-# {name}: first-boot L2/L3 bootstrap = the real host's netplan 01-fabric.yaml, as a script.
-# bond0 = 802.3ad fast-LACP, l3+4 hash, MTU 9000, over data0(eth1)+data1(eth2). Idempotent.
-set -e
-ip link show bond0 >/dev/null 2>&1 && exit 0
-ip link add bond0 type bond mode 802.3ad lacp_rate fast miimon 100 xmit_hash_policy layer3+4
-ip link set bond0 address {mac}
-ip link set eth1 down; ip link set eth2 down
-ip link set eth1 master bond0; ip link set eth2 master bond0
-ip link set eth1 mtu 9000; ip link set eth2 mtu 9000; ip link set bond0 mtu 9000
-ip link set eth1 up; ip link set eth2 up; ip link set bond0 up
-ip addr add {ip} dev bond0
-# drop docker's metric-0 eth0 (mgmt) default so the FABRIC (bond0) is the sole default; else
-# cross-subnet replies leave via mgmt and die. mgmt /24 stays (directly connected) for host SSH.
-while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
-ip route replace default via {gw} dev bond0
-printf 'nameserver {dns}\\nsearch ecloud.lab\\n' > /etc/resolv.conf
+# {name}: first-boot bond + identity{' + services' if extra else ''}.
+if ! ip link show bond0 >/dev/null 2>&1; then
+  ip link add bond0 type bond mode 802.3ad lacp_rate fast miimon 100 xmit_hash_policy layer3+4
+  ip link set bond0 address {mac}
+  ip link set eth1 down; ip link set eth2 down
+  ip link set eth1 master bond0; ip link set eth2 master bond0
+  ip link set eth1 mtu 9000; ip link set eth2 mtu 9000; ip link set bond0 mtu 9000
+  ip link set eth1 up; ip link set eth2 up; ip link set bond0 up
+  ip addr add {ip} dev bond0
+  # drop docker's metric-0 eth0 (mgmt) default so the FABRIC (bond0) is the sole default; else
+  # cross-subnet replies leave via mgmt and die. mgmt /24 stays (directly connected) for host SSH.
+  while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
+  ip route replace default via {gw} dev bond0
+  printf 'nameserver {dns}\\nsearch ecloud.lab\\n' > /etc/resolv.conf
+fi
 for a in user admin; do id $a >/dev/null 2>&1 || adduser -D -s /bin/sh $a 2>/dev/null; addgroup $a wheel 2>/dev/null; done; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; echo "admin:admin" | chpasswd 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
-echo "{name}: bond0 {ip} via {gw} dns {dns}"
+{extra}echo "{name}: bond0 {ip} via {gw} dns {dns}"
 """
+
+# svc nodes (service-node-dns-ntp @10.167.30.10, dc2-svc-ntp-dns @10.168.30.10) also run the lab
+# DNS (dnsmasq) + NTP (OpenNTPD). Clients reach this DNS via the PA firewalls' dns-dnat
+# (10.80.15.41 -> 10.167.30.10). Config + hosts come from the bind mount /bootstrap/svc.
+SVC_NODES = ["service-node-dns-ntp", "dc2-svc-ntp-dns"]
+SVC_EXTRA = """# --- lab DNS (dnsmasq) + NTP (OpenNTPD), started from the bind-mounted config ---
+cp -f /bootstrap/svc/dnsmasq.conf /etc/dnsmasq.conf 2>/dev/null
+cp -f /bootstrap/svc/ecloud.hosts /etc/ecloud.hosts 2>/dev/null
+printf 'listen on *\\n' > /etc/ntpd.conf
+pgrep -x dnsmasq >/dev/null 2>&1 || /usr/sbin/dnsmasq -C /etc/dnsmasq.conf 2>/dev/null
+pgrep -x ntpd    >/dev/null 2>&1 || setsid /usr/sbin/ntpd -f /etc/ntpd.conf </dev/null >/tmp/ntpd.log 2>&1 &
+"""
+
+# demo service names -> external anycast VIPs (all on the client-facing 10.80.15.0/24 segment)
+DEMO_DNS = {
+ "anycast": "10.80.15.50", "app": "10.80.15.50", "dc1": "10.80.15.51",
+ "dc2": "10.80.15.52", "client-1": "10.80.15.53", "ext-client-2": "10.80.15.54",
+}
+
+def dnsmasq_conf():
+    lines = [
+        "# ecloud lab DNS. Serves the ecloud.lab zone; forwards the rest upstream. Listens on bond0",
+        "# (its DC's svc IP) + loopback. Clients reach it via the PA firewalls' dns-dnat.",
+        "interface=bond0", "listen-address=127.0.0.1", "bind-interfaces",
+        "domain=ecloud.lab", "local=/ecloud.lab/", "expand-hosts", "no-resolv",
+        # ignore the container's clab-populated /etc/hosts (mgmt IPs); serve fabric IPs from ecloud.hosts
+        "no-hosts",
+        "server=8.8.8.8", "server=1.1.1.1", "addn-hosts=/etc/ecloud.hosts",
+    ]
+    for n, ip in DEMO_DNS.items():
+        lines.append(f"address=/{n}.ecloud.lab/{ip}")
+    return "\n".join(lines) + "\n"
+
+def ecloud_hosts():
+    rows = []
+    for n, (ip, *_ ) in BONDED.items():
+        rows.append(f"{ip.split('/')[0]} {n}.ecloud.lab {n}")
+    for n, (a, _b) in GOBGP.items():
+        rows.append(f"{a.split('/')[0]} {n}.ecloud.lab {n}")
+    return "\n".join(rows) + "\n"
 
 def client_script(name, ip, gw):
     return f"""#!/bin/sh
@@ -101,16 +143,40 @@ for a in user admin; do id $a >/dev/null 2>&1 || adduser -D -s /bin/sh $a 2>/dev
 echo "{name}: eth1 {ip} via {gw}"
 """
 
+def _peer30(ip):
+    """The aggr (router) end of a /30 p2p link = the host address minus one (.2->.1, .6->.5)."""
+    o = ip.split("/")[0].split("."); o[-1] = str(int(o[-1]) - 1); return ".".join(o)
+
 def gobgp_script(name, ip1, ip2):
+    # GoBGP anycast controller node. Two routed /30 uplinks to the backbone (eth1->br-agg-sw-1,
+    # eth2->br-agg-sw-2). Runs gobgpd (iBGP AS65400 to both aggr, re-originates the anycast VIPs)
+    # plus controller_brain.py (HTTP-health-steers each VIP to a DC). Binaries + configs come from
+    # the bind mount /bootstrap/gobgp (airgap: the fabric has no internet). L3+SSH are idempotent;
+    # the daemons are (re)started only if not already running, so this is safe to re-run.
+    p1, p2 = _peer30(ip1), _peer30(ip2)
     return f"""#!/bin/sh
-# {name}: two routed /30 uplinks to the backbone (eth1->br-agg-sw-1, eth2->br-agg-sw-2). No bond.
-set -e
-ip addr show eth1 | grep -q '{ip1.split('/')[0]}' && exit 0
-ip link set eth1 up; ip link set eth2 up
-ip addr add {ip1} dev eth1
-ip addr add {ip2} dev eth2
-for a in user admin; do id $a >/dev/null 2>&1 || adduser -D -s /bin/sh $a 2>/dev/null; addgroup $a wheel 2>/dev/null; done; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; echo "admin:admin" | chpasswd 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
-echo "{name}: eth1 {ip1} eth2 {ip2}"
+# {name}: GoBGP anycast controller (aggr peers {p1}/{p2}, AS65400).
+if ! ip addr show eth1 2>/dev/null | grep -q '{ip1.split('/')[0]}'; then
+  ip link set eth1 up; ip link set eth2 up
+  ip addr add {ip1} dev eth1; ip addr add {ip2} dev eth2
+fi
+# reach the DC regional VIPs (.202.1/.202.2) over the FABRIC (ECMP via both aggr), not the eth0 mgmt
+# default: gobgpd learns them in BGP but does NOT program the kernel FIB, so the brain's health
+# HTTP would otherwise follow the mgmt default and blackhole.
+ip route replace 192.168.202.0/24 nexthop via {p1} dev eth1 nexthop via {p2} dev eth2 2>/dev/null \\
+  || ip route replace 192.168.202.0/24 via {p1} dev eth1
+for a in user admin; do id $a >/dev/null 2>&1 || adduser -D -s /bin/sh $a 2>/dev/null; addgroup $a wheel 2>/dev/null; done
+echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; echo "admin:admin" | chpasswd 2>/dev/null
+pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
+# install gobgpd + brain from the bind mount, then start (setsid survives the exec; PID1 nginx stays up)
+mkdir -p /etc/gobgp /opt/gobgp-brain /run
+cp -f /bootstrap/gobgp/gobgpd /bootstrap/gobgp/gobgp /usr/local/bin/ 2>/dev/null; chmod +x /usr/local/bin/gobgpd /usr/local/bin/gobgp 2>/dev/null
+cp -f /bootstrap/gobgp/{name}/gobgpd.conf /bootstrap/gobgp/{name}/brain.json /etc/gobgp/ 2>/dev/null
+cp -f /bootstrap/gobgp/controller_brain.py /bootstrap/gobgp/set_override.py /opt/gobgp-brain/ 2>/dev/null
+if ! pgrep -f 'gobgpd -f' >/dev/null 2>&1; then setsid /usr/local/bin/gobgpd -f /etc/gobgp/gobgpd.conf --api-hosts 127.0.0.1:50051 </dev/null >/tmp/gobgpd.log 2>&1 & fi
+sleep 3
+if ! pgrep -f controller_brain >/dev/null 2>&1; then setsid /usr/bin/python3 /opt/gobgp-brain/controller_brain.py </dev/null >/tmp/gobgp-brain.log 2>&1 & fi
+echo "{name}: eth1 {ip1} eth2 {ip2}; gobgpd+brain up (aggr {p1},{p2})"
 """
 
 if __name__ == "__main__":
@@ -118,10 +184,16 @@ if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "bootstrap/hosts"
     os.makedirs(out, exist_ok=True)
     for n,(ip,gw,dns,mac,dc) in BONDED.items():
-        open(f"{out}/{n}.sh","w").write(bond_script(n,ip,gw,dns,mac))
+        extra = SVC_EXTRA if n in SVC_NODES else ""
+        open(f"{out}/{n}.sh","w").write(bond_script(n,ip,gw,dns,mac,extra))
     for n,(ip,gw) in CLIENTS.items():
         open(f"{out}/{n}.sh","w").write(client_script(n,ip,gw))
     for n,(a,b) in GOBGP.items():
         open(f"{out}/{n}.sh","w").write(gobgp_script(n,a,b))
-    for f in os.listdir(out): os.chmod(f"{out}/{f}", 0o755)
-    print(f"wrote {len(os.listdir(out))} host bootstrap scripts to {out}/")
+    # svc DNS/NTP assets (bind-mounted at /bootstrap/svc, installed by the svc bootstrap scripts)
+    os.makedirs(f"{out}/svc", exist_ok=True)
+    open(f"{out}/svc/dnsmasq.conf","w").write(dnsmasq_conf())
+    open(f"{out}/svc/ecloud.hosts","w").write(ecloud_hosts())
+    for f in os.listdir(out):
+        if os.path.isfile(f"{out}/{f}"): os.chmod(f"{out}/{f}", 0o755)
+    print(f"wrote host bootstrap scripts + svc/ DNS assets to {out}/")
