@@ -15,5 +15,5 @@ ip addr add 10.167.10.11/24 dev bond0
 while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
 ip route replace default via 10.167.10.1 dev bond0
 printf 'nameserver 10.167.30.10\nsearch ecloud.lab\n' > /etc/resolv.conf
-id user >/dev/null 2>&1 || adduser -D -s /bin/sh user 2>/dev/null; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; addgroup user wheel 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
+for a in user admin; do id $a >/dev/null 2>&1 || adduser -D -s /bin/sh $a 2>/dev/null; addgroup $a wheel 2>/dev/null; done; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; echo "admin:admin" | chpasswd 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
 echo "k8s-master-1: bond0 10.167.10.11/24 via 10.167.10.1 dns 10.167.30.10"

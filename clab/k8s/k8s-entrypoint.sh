@@ -53,13 +53,13 @@ if [ -n "$NODE_BOND_IP" ]; then
   fi
 fi
 
-# ---- 3b) SSH access (dropbear) for operator login, faithful to the real lab: user/Test123 ----
-id user >/dev/null 2>&1 || adduser -D -s /bin/sh user 2>/dev/null || true
-echo "user:Test123" | chpasswd 2>/dev/null || true
-echo "root:Test123" | chpasswd 2>/dev/null || true
-addgroup user wheel 2>/dev/null || true
+# ---- 3b) SSH access (dropbear): admin/admin (clab VSCode default), user/Test123, root/Test123 ----
+for acct in user admin; do id "$acct" >/dev/null 2>&1 || adduser -D -s /bin/sh "$acct" 2>/dev/null || true; addgroup "$acct" wheel 2>/dev/null || true; done
+echo "user:Test123"  | chpasswd 2>/dev/null || true
+echo "root:Test123"  | chpasswd 2>/dev/null || true
+echo "admin:admin"   | chpasswd 2>/dev/null || true
 pgrep -x dropbear >/dev/null 2>&1 || (mkdir -p /etc/dropbear; dropbear -R -p 22 >/dev/null 2>&1) || true
-log "sshd (dropbear) up; login user/Test123"
+log "sshd (dropbear) up; login admin/admin or user|root/Test123"
 
 # ---- 3c) cluster self-config: the cluster-init master installs Cilium + BGP + the dc-demo app
 #         in the background once the cluster forms (idempotent; makes the k8s layer bootstrap too) ----
