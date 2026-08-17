@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Collect airgap images (host needs internet) and build ecloud-k8s-host. Run once on home-eve.
+# Collect the airgap assets (needs internet + docker + zstd) and build ecloud-k8s-host:1.31.5.
+# Run once on the containerlab host, from anywhere: assets land next to this script. The k8s
+# nodes have NO internet from inside the lab (their default route points at the fabric), so
+# every container image k3s/Cilium/the demo app needs is baked into this one host image.
 set -e
-cd /root/containerlab/ecloud/k8s
+cd "$(dirname "$0")"
 K3S=v1.31.5+k3s1; CIL=1.16.5
 [ -f k3s ] || curl -sfL -o k3s "https://github.com/k3s-io/k3s/releases/download/${K3S}/k3s"
 [ -f k3s-airgap-images-amd64.tar ] || { curl -sfL -o a.tar.zst "https://github.com/k3s-io/k3s/releases/download/${K3S}/k3s-airgap-images-amd64.tar.zst"; zstd -d -f a.tar.zst -o k3s-airgap-images-amd64.tar; }

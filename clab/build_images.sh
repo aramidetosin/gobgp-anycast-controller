@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# Build the two vrnetlab images from the qcow2s in ./images (run once, ~10-15 min).
+# Build the two vrnetlab images from your qcow2s, and stage the GoBGP binaries.
+# Run once on the containerlab host (~10-15 min).
+#   VR  = your vrnetlab checkout (with the launcher patches applied, see README)
+#   IMG = directory holding the two qcow2s you supply (NOT distributed with this repo):
+#         cumulus-linux-5.12.0-vx-amd64-qemu.qcow2  and  PA-VM-KVM-12.1.2.qcow2
 set -e
-VR=/root/containerlab/vrnetlab
-IMG=/root/containerlab/ecloud/images
+HERE="$(cd "$(dirname "$0")" && pwd)"
+VR="${VR:-/root/containerlab/vrnetlab}"
+IMG="${IMG:-$HERE/images}"
 echo "=== Cumulus VX 5.12.0 -> vrnetlab/nvidia_cumulus-vx:5.12.0 ==="
 cp -n "$IMG/cumulus-linux-5.12.0-vx-amd64-qemu.qcow2" "$VR/nvidia/cumulus-vx/"
 ( cd "$VR/nvidia/cumulus-vx" && make )
-echo "=== PA-VM 12.1.2 -> vrnetlab/vr-pan (or paloalto_pa-vm):12.1.2 ==="
+echo "=== PA-VM 12.1.2 -> vrnetlab/paloalto_pa-vm:12.1.2 ==="
 cp -n "$IMG/PA-VM-KVM-12.1.2.qcow2" "$VR/paloalto/pan/"
 ( cd "$VR/paloalto/pan" && make )
-echo "=== GoBGP binaries -> bootstrap/hosts/gobgp/ (airgap: baked into the controller nodes' bind mount) ==="
-GB=/root/containerlab/ecloud/bootstrap/hosts/gobgp
+echo "=== GoBGP binaries -> bootstrap/hosts/gobgp/ (airgap: served to the controller nodes via the bind mount) ==="
+GB="$HERE/bootstrap/hosts/gobgp"
 GBVER=3.30.0
 if [ ! -x "$GB/gobgpd" ]; then
   mkdir -p "$GB"
