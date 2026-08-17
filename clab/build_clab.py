@@ -197,9 +197,22 @@ def host_node(h, grp, kind="linux", extra=None):
     out.append(f"        - bootstrap/hosts:/bootstrap:ro")
     out.append(f"      exec:")
     out.append(f"        - sh /bootstrap/{h}.sh")
+def k8s_node(h, grp):
+    # k8s nodes run the custom ecloud-k8s-host image; its PID-1 entrypoint does the cgroup-v2
+    # evacuation, builds bond0 from env, and launches k3s by role. No bind/exec networking.
+    env = H.k8s_env(h)
+    out.append(f"    {h}:")
+    out.append(f"      kind: linux")
+    out.append(f"      image: ecloud-k8s-host:1.31.5")
+    out.append(f"      mgmt-ipv4: {mgmt_ip[h]}")
+    out.append(f"      group: {grp}")
+    out.append(f"      env:")
+    for k,v in env.items():
+        out.append(f"        {k}: \"{v}\"")
 for h in hosts:
     mgmt_ip[h] = f"172.29.129.{ipn}"; ipn += 1
-    if h in H.CLIENTS:      host_node(h, "clients")
+    if h in H.K8S_NODES:    k8s_node(h, "dc2-k8s" if h.startswith("dc2") else "dc1-k8s")
+    elif h in H.CLIENTS:    host_node(h, "clients")
     elif h in H.GOBGP:      host_node(h, "controllers")
     elif h in H.BONDED:     host_node(h, "dc2-hosts" if h.startswith("dc2") else "dc1-hosts")
     else:                   host_node(h, "hosts")

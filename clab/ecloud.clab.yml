@@ -139,52 +139,87 @@ topology:
         QEMU_MEMORY: 16384
     k8s-master-1:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.33
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-master-1.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "server-init"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.10.11"
+        NODE_BOND_IP: "10.167.10.11/24"
+        NODE_GW: "10.167.10.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:0b:00:01"
     k8s-master-2:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.34
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-master-2.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "server-join"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.10.12"
+        NODE_BOND_IP: "10.167.10.12/24"
+        NODE_GW: "10.167.10.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:0c:00:01"
+        K3S_URL: "https://10.167.10.11:6443"
     k8s-master-3:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.35
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-master-3.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "server-join"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.10.13"
+        NODE_BOND_IP: "10.167.10.13/24"
+        NODE_GW: "10.167.10.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:0d:00:01"
+        K3S_URL: "https://10.167.10.11:6443"
     k8s-woker-1:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.36
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-woker-1.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.20.11"
+        NODE_BOND_IP: "10.167.20.11/24"
+        NODE_GW: "10.167.20.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:0e:00:01"
+        K3S_URL: "https://10.167.10.11:6443"
     k8s-woker-2:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.37
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-woker-2.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.20.12"
+        NODE_BOND_IP: "10.167.20.12/24"
+        NODE_GW: "10.167.20.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:0f:00:01"
+        K3S_URL: "https://10.167.10.11:6443"
     k8s-woker-3:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.38
-      group: dc1-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/k8s-woker-3.sh
+      group: dc1-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc1-k3s-9f3a2c"
+        NODE_IP: "10.167.20.13"
+        NODE_BOND_IP: "10.167.20.13/24"
+        NODE_GW: "10.167.20.1"
+        NODE_DNS: "10.167.30.10"
+        NODE_MAC: "50:00:00:10:00:01"
+        K3S_URL: "https://10.167.10.11:6443"
     service-node-dns-ntp:
       kind: linux
       mgmt-ipv4: 172.29.129.39
@@ -227,36 +262,59 @@ topology:
         - sh /bootstrap/gobgp-2.sh
     dc2-k8s-master-1:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.44
-      group: dc2-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/dc2-k8s-master-1.sh
+      group: dc2-k8s
+      env:
+        K3S_ROLE: "server-init"
+        K3S_TOKEN: "ecloud-dc2-k3s-7b2e11"
+        NODE_IP: "10.168.10.11"
+        NODE_BOND_IP: "10.168.10.11/24"
+        NODE_GW: "10.168.10.1"
+        NODE_DNS: "10.168.30.10"
+        NODE_MAC: "50:00:00:1f:00:01"
     dc2-k8s-worker-1:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.45
-      group: dc2-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/dc2-k8s-worker-1.sh
+      group: dc2-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc2-k3s-7b2e11"
+        NODE_IP: "10.168.10.21"
+        NODE_BOND_IP: "10.168.10.21/24"
+        NODE_GW: "10.168.10.1"
+        NODE_DNS: "10.168.30.10"
+        NODE_MAC: "50:00:00:20:00:01"
+        K3S_URL: "https://10.168.10.11:6443"
     dc2-k8s-worker-2:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.46
-      group: dc2-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/dc2-k8s-worker-2.sh
+      group: dc2-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc2-k3s-7b2e11"
+        NODE_IP: "10.168.10.22"
+        NODE_BOND_IP: "10.168.10.22/24"
+        NODE_GW: "10.168.10.1"
+        NODE_DNS: "10.168.30.10"
+        NODE_MAC: "50:00:00:21:00:01"
+        K3S_URL: "https://10.168.10.11:6443"
     dc2-k8s-worker-3:
       kind: linux
+      image: ecloud-k8s-host:1.31.5
       mgmt-ipv4: 172.29.129.47
-      group: dc2-hosts
-      binds:
-        - bootstrap/hosts:/bootstrap:ro
-      exec:
-        - sh /bootstrap/dc2-k8s-worker-3.sh
+      group: dc2-k8s
+      env:
+        K3S_ROLE: "agent"
+        K3S_TOKEN: "ecloud-dc2-k3s-7b2e11"
+        NODE_IP: "10.168.10.23"
+        NODE_BOND_IP: "10.168.10.23/24"
+        NODE_GW: "10.168.10.1"
+        NODE_DNS: "10.168.30.10"
+        NODE_MAC: "50:00:00:22:00:01"
+        K3S_URL: "https://10.168.10.11:6443"
     dc2-svc-ntp-dns:
       kind: linux
       mgmt-ipv4: 172.29.129.48

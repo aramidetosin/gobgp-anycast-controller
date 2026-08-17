@@ -32,11 +32,32 @@ GOBGP = {
  "gobgp-1": ("10.201.20.2/30","10.201.20.6/30"),
  "gobgp-2": ("10.201.20.10/30","10.201.20.14/30"),
 }
-# k8s cluster membership (kind cluster name -> which of the above are its nodes, in kind order)
+# k8s cluster membership (cluster -> nodes; first control-plane is the cluster-init server)
 CLUSTERS = {
  "dc1": {"control-plane":["k8s-master-1","k8s-master-2","k8s-master-3"], "workers":["k8s-woker-1","k8s-woker-2","k8s-woker-3"], "pod":"10.244.0.0/16","svc":"10.96.0.0/12","asn":65010},
  "dc2": {"control-plane":["dc2-k8s-master-1"], "workers":["dc2-k8s-worker-1","dc2-k8s-worker-2","dc2-k8s-worker-3"], "pod":"10.245.0.0/16","svc":"10.96.0.0/16","asn":65020},
 }
+K8S_TOKENS = {"dc1": "ecloud-dc1-k3s-9f3a2c", "dc2": "ecloud-dc2-k3s-7b2e11"}
+# derived: k8s node -> role
+K8S_NODES = {}
+for _dc, _c in CLUSTERS.items():
+    for _i, _n in enumerate(_c["control-plane"]):
+        K8S_NODES[_n] = {"dc": _dc, "role": "server-init" if _i == 0 else "server-join"}
+    for _n in _c["workers"]:
+        K8S_NODES[_n] = {"dc": _dc, "role": "agent"}
+
+def first_master_ip(dc):
+    return BONDED[CLUSTERS[dc]["control-plane"][0]][0].split("/")[0]
+
+def k8s_env(name):
+    """env passed to the ecloud-k8s-host container for a k8s node (drives its PID-1 entrypoint)."""
+    info = K8S_NODES[name]; dc = info["dc"]
+    ip, gw, dns, mac, _ = BONDED[name]
+    env = {"K3S_ROLE": info["role"], "K3S_TOKEN": K8S_TOKENS[dc],
+           "NODE_IP": ip.split("/")[0], "NODE_BOND_IP": ip, "NODE_GW": gw, "NODE_DNS": dns, "NODE_MAC": mac}
+    if info["role"] != "server-init":
+        env["K3S_URL"] = f"https://{first_master_ip(dc)}:6443"
+    return env
 
 def bond_script(name, ip, gw, dns, mac):
     return f"""#!/bin/sh
