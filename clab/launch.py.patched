@@ -200,6 +200,25 @@ class CumulusVX_vm(vrnetlab.VM):
             self.logger.info("startup-config applied and marked")
         else:
             self.logger.warning("nv config apply did not report 'applied': %s", out[-200:])
+            return
+        # 4) VX EVPN-MH quirk: ES host bonds stay carrier-down after `nv config apply` until the VM
+        #    REBOOTS (documented in the EVE lab; identical here). If the config has multihoming, do the
+        #    reboot as part of first boot, wait for switchd, then apply `evpn mh redirect-off` (vtysh-
+        #    only, does not persist in NVUE, must be re-applied per boot) and write memory.
+        if "evpn multihoming" in body:
+            import time as _t2
+            self.logger.info("EVPN-MH config detected: rebooting VM once so the ES bonds converge ...")
+            subprocess.run(ssh + ["sudo systemctl reboot"], capture_output=True, timeout=30)
+            _t2.sleep(45)
+            for i in range(60):
+                r = subprocess.run(ssh + ["systemctl is-active switchd"], capture_output=True, timeout=20)
+                if r.returncode == 0 and b"active" in r.stdout and b"inactive" not in r.stdout:
+                    break
+                _t2.sleep(5)
+            else:
+                self.logger.warning("switchd not active after post-config reboot (continuing)")
+            r = subprocess.run(ssh + ["sudo vtysh -c 'configure terminal' -c 'evpn mh redirect-off' -c 'end' -c 'write memory' 2>&1 | tail -1"], capture_output=True, timeout=60)
+            self.logger.info("post-reboot: evpn mh redirect-off applied (%s)", r.stdout.decode().strip()[-80:])
 
     def bootstrap_spin(self):
         """Called repeatedly by the VR main loop until self.running is True.
@@ -269,10 +288,7 @@ class CumulusVX_vm(vrnetlab.VM):
         self.wait_write("systemctl is-active switchd 2>/dev/null", None)
         time.sleep(2)
         try:
-            # ecloud fix: (1) the scrapli telnet wrapper returns STR matches, the stock code compared
-            # against b"active" and so never returned True (node stayed unhealthy forever, and any
-            # post-boot hook never fired); (2) anchor to a result LINE so the echoed command text
-            # "is-active" cannot satisfy the match. Match order: inactive/failed first, then active.
+            # ecloud fix: str-vs-bytes + line-anchored patterns (see cvx_startup_config.patch.py)
             (_, match, _) = self.tn.expect([rb"[\r\n]inactive[\r\n]", rb"[\r\n]failed[\r\n]", rb"[\r\n]active[\r\n]"], 3)
             if match:
                 m0 = match.group(0); m0 = m0.decode() if isinstance(m0, bytes) else m0
@@ -290,9 +306,13 @@ class CumulusVX_vm(vrnetlab.VM):
 
         self.logger.info("First-boot setup for '%s' ...", VM_USER)
 
-        # Step 1 — log in
+        # Step 1 — log in. ecloud fix: a reused overlay already has NEW_PASS; sending the factory
+        # password there fails ("Login incorrect") and wedges the bootstrap. Detect reuse via the
+        # marker the previous boot left in /config, and pick the right password.
+        import os as _os
+        _reused = _os.path.exists("/config/.startup-config.applied") or _os.path.exists("/config/.first-boot.done")
         self.wait_write(VM_USER, None)
-        self.wait_write(VM_PASS, "Password:")
+        self.wait_write(NEW_PASS if _reused else VM_PASS, "Password:")
 
         # Step 2 — forced password change (PAM)
         (ridx, match, _) = self.tn.expect(
@@ -329,6 +349,10 @@ class CumulusVX_vm(vrnetlab.VM):
         else:
             self.logger.warning("Shell prompt not detected after config")
 
+        try:
+            open("/config/.first-boot.done", "w").write("ok\n")
+        except Exception:
+            pass
         self.logger.info("First-boot setup complete")
 
 

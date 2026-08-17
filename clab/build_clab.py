@@ -169,13 +169,40 @@ for fw in firewalls:
     out.append(f"      kind: paloalto_panos")
     out.append(f"      mgmt-ipv4: {mgmt_ip[fw]}")
     out.append(f"      group: firewall")
+    # the vrnetlab PAN launcher natively applies /config/startup-config.cfg (set-format lines, then commit)
+    out.append(f"      startup-config: bootstrap/{fw}.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)")
+    # containerlab's paloalto_panos kind hard-codes QEMU_CPU=qemu64 (nodes/vr_pan/vr-pan.go:66). qemu64 lacks
+    # x86-64-v2 (SSE4.2/POPCNT/CX16) and PAN-OS 12 glibc dies with "CPU does not support x86-64-v2" +
+    # rcu stalls. The kind merges user env OVER its defaults, so override to the host CPU model.
+    out.append(f"      env:")
+    out.append(f"        QEMU_CPU: host")
+    # vrnetlab hard-codes ram=6144/smp=2 for PAN; PAN-OS 12.1 fails its resource checks at that size and
+    # drops into the Maintenance Recovery Tool. The working EVE-NG PANs run 8 vCPU / 16 GB (verified from
+    # the live qemu cmdline). Match them via vrnetlab's QEMU_SMP / QEMU_MEMORY env overrides.
+    out.append(f"        QEMU_SMP: 8")
+    out.append(f"        QEMU_MEMORY: 16384")
+# ---- hosts: every one bootstraps at first start via exec of its own script (bind-mounted) ----
+import importlib.util, sys as _sys
+_spec = importlib.util.spec_from_file_location("hosts", os.path.join(os.path.dirname(__file__), "hosts.py"))
+H = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(H)
+def host_node(h, grp, kind="linux", extra=None):
+    out.append(f"    {h}:")
+    out.append(f"      kind: {kind}")
+    if kind == "linux":
+        out.append(f"      mgmt-ipv4: {mgmt_ip[h]}")
+    out.append(f"      group: {grp}")
+    if extra:
+        for e in extra: out.append(f"      {e}")
+    out.append(f"      binds:")
+    out.append(f"        - bootstrap/hosts:/bootstrap:ro")
+    out.append(f"      exec:")
+    out.append(f"        - sh /bootstrap/{h}.sh")
 for h in hosts:
     mgmt_ip[h] = f"172.29.129.{ipn}"; ipn += 1
-    grp = "dc2-hosts" if h.startswith("dc2") else ("controllers" if h.startswith("gobgp") else ("clients" if "client" in h else "dc1-hosts"))
-    out.append(f"    {h}:")
-    out.append(f"      kind: linux")
-    out.append(f"      mgmt-ipv4: {mgmt_ip[h]}")
-    out.append(f"      group: {grp}")
+    if h in H.CLIENTS:      host_node(h, "clients")
+    elif h in H.GOBGP:      host_node(h, "controllers")
+    elif h in H.BONDED:     host_node(h, "dc2-hosts" if h.startswith("dc2") else "dc1-hosts")
+    else:                   host_node(h, "hosts")
 # the shared 'internet' segment (EVE net54): both PAN eth1/3 + both clients. clab has no multi-point link,
 # so model it as a bridge node.
 out.append("    internet:")

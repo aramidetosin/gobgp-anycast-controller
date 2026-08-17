@@ -123,74 +123,148 @@ topology:
       kind: paloalto_panos
       mgmt-ipv4: 172.29.129.31
       group: firewall
+      startup-config: bootstrap/fw-pri.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)
+      env:
+        QEMU_CPU: host
+        QEMU_SMP: 8
+        QEMU_MEMORY: 16384
     fw-sec:
       kind: paloalto_panos
       mgmt-ipv4: 172.29.129.32
       group: firewall
+      startup-config: bootstrap/fw-sec.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)
+      env:
+        QEMU_CPU: host
+        QEMU_SMP: 8
+        QEMU_MEMORY: 16384
     k8s-master-1:
       kind: linux
       mgmt-ipv4: 172.29.129.33
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-master-1.sh
     k8s-master-2:
       kind: linux
       mgmt-ipv4: 172.29.129.34
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-master-2.sh
     k8s-master-3:
       kind: linux
       mgmt-ipv4: 172.29.129.35
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-master-3.sh
     k8s-woker-1:
       kind: linux
       mgmt-ipv4: 172.29.129.36
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-woker-1.sh
     k8s-woker-2:
       kind: linux
       mgmt-ipv4: 172.29.129.37
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-woker-2.sh
     k8s-woker-3:
       kind: linux
       mgmt-ipv4: 172.29.129.38
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/k8s-woker-3.sh
     service-node-dns-ntp:
       kind: linux
       mgmt-ipv4: 172.29.129.39
       group: dc1-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/service-node-dns-ntp.sh
     client-1:
       kind: linux
       mgmt-ipv4: 172.29.129.40
       group: clients
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/client-1.sh
     external-client-2:
       kind: linux
       mgmt-ipv4: 172.29.129.41
       group: clients
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/external-client-2.sh
     gobgp-1:
       kind: linux
       mgmt-ipv4: 172.29.129.42
       group: controllers
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/gobgp-1.sh
     gobgp-2:
       kind: linux
       mgmt-ipv4: 172.29.129.43
       group: controllers
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/gobgp-2.sh
     dc2-k8s-master-1:
       kind: linux
       mgmt-ipv4: 172.29.129.44
       group: dc2-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/dc2-k8s-master-1.sh
     dc2-k8s-worker-1:
       kind: linux
       mgmt-ipv4: 172.29.129.45
       group: dc2-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/dc2-k8s-worker-1.sh
     dc2-k8s-worker-2:
       kind: linux
       mgmt-ipv4: 172.29.129.46
       group: dc2-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/dc2-k8s-worker-2.sh
     dc2-k8s-worker-3:
       kind: linux
       mgmt-ipv4: 172.29.129.47
       group: dc2-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/dc2-k8s-worker-3.sh
     dc2-svc-ntp-dns:
       kind: linux
       mgmt-ipv4: 172.29.129.48
       group: dc2-hosts
+      binds:
+        - bootstrap/hosts:/bootstrap:ro
+      exec:
+        - sh /bootstrap/dc2-svc-ntp-dns.sh
     internet:
       kind: bridge     # = EVE net54 (10.80.15.0/24): PAN eth1/3 x2 + client-1 + external-client-2
   links:

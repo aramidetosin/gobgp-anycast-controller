@@ -67,9 +67,73 @@ METHOD = '''
             self.logger.info("startup-config applied and marked")
         else:
             self.logger.warning("nv config apply did not report 'applied': %s", out[-200:])
+            return
+        # 4) VX EVPN-MH quirk: ES host bonds stay carrier-down after `nv config apply` until the VM
+        #    REBOOTS (documented in the EVE lab; identical here). If the config has multihoming, do the
+        #    reboot as part of first boot, wait for switchd, then apply `evpn mh redirect-off` (vtysh-
+        #    only, does not persist in NVUE, must be re-applied per boot) and write memory.
+        if "evpn multihoming" in body:
+            import time as _t2
+            self.logger.info("EVPN-MH config detected: rebooting VM once so the ES bonds converge ...")
+            subprocess.run(ssh + ["sudo systemctl reboot"], capture_output=True, timeout=30)
+            _t2.sleep(45)
+            for i in range(60):
+                r = subprocess.run(ssh + ["systemctl is-active switchd"], capture_output=True, timeout=20)
+                if r.returncode == 0 and b"active" in r.stdout and b"inactive" not in r.stdout:
+                    break
+                _t2.sleep(5)
+            else:
+                self.logger.warning("switchd not active after post-config reboot (continuing)")
+            r = subprocess.run(ssh + ["sudo vtysh -c 'configure terminal' -c 'evpn mh redirect-off' -c 'end' -c 'write memory' 2>&1 | tail -1"], capture_output=True, timeout=60)
+            self.logger.info("post-reboot: evpn mh redirect-off applied (%s)", r.stdout.decode().strip()[-80:])
 
     def bootstrap_spin(self):'''
 assert "\n    def bootstrap_spin(self):" in t
 t = t.replace("\n    def bootstrap_spin(self):", METHOD, 1)
+
+# ---- fix 2: upstream bug in _switchd_is_ready() ----
+# vrnetlab's scrapli "telnetlib-compatible" wrapper returns STR regex matches, but the stock code
+# compared match.group(0) to the BYTES literal b"active" -> always False -> the VM never reached
+# running/healthy and no post-boot hook could ever fire. Also anchor to a result LINE so the echoed
+# command text "is-active" cannot satisfy the match (verified against real serial bytes).
+OLD_RDY = '''            (_, match, _) = self.tn.expect([b"active", b"inactive", b"failed"], 3)
+            if match:
+                return match.group(0) == b"active"'''
+NEW_RDY = '''            # ecloud fix: str-vs-bytes + line-anchored patterns (see cvx_startup_config.patch.py)
+            (_, match, _) = self.tn.expect([rb"[\\r\\n]inactive[\\r\\n]", rb"[\\r\\n]failed[\\r\\n]", rb"[\\r\\n]active[\\r\\n]"], 3)
+            if match:
+                m0 = match.group(0); m0 = m0.decode() if isinstance(m0, bytes) else m0
+                return m0.strip() == "active"'''
+assert OLD_RDY in t, "_switchd_is_ready anchor not found - launcher changed upstream?"
+t = t.replace(OLD_RDY, NEW_RDY, 1)
+
+# ---- fix 3: overlay-reuse login ----
+# On a REUSED persistent overlay the password was already changed to Clab123! on a previous boot,
+# but the stock first-boot always sends the factory 'cumulus' password first -> "Login incorrect" ->
+# 60s login timeout -> Step 3 hangs on a dead console -> node never becomes healthy and no config
+# applies. (100% of ripple-recreated nodes hit this.) Fix: log in with the NEW password when the
+# overlay is reused, and only take the factory/expired-password path on a truly fresh disk.
+OLD_LOGIN = '''        # Step 1 — log in
+        self.wait_write(VM_USER, None)
+        self.wait_write(VM_PASS, "Password:")'''
+NEW_LOGIN = '''        # Step 1 — log in. ecloud fix: a reused overlay already has NEW_PASS; sending the factory
+        # password there fails ("Login incorrect") and wedges the bootstrap. Detect reuse via the
+        # marker the previous boot left in /config, and pick the right password.
+        import os as _os
+        _reused = _os.path.exists("/config/.startup-config.applied") or _os.path.exists("/config/.first-boot.done")
+        self.wait_write(VM_USER, None)
+        self.wait_write(NEW_PASS if _reused else VM_PASS, "Password:")'''
+assert OLD_LOGIN in t, "first-boot login anchor not found"
+t = t.replace(OLD_LOGIN, NEW_LOGIN, 1)
+# leave a marker once first-boot completes, so the next boot on this overlay knows the password state
+OLD_DONE = '''        self.logger.info("First-boot setup complete")'''
+NEW_DONE = '''        try:
+            open("/config/.first-boot.done", "w").write("ok\\n")
+        except Exception:
+            pass
+        self.logger.info("First-boot setup complete")'''
+assert OLD_DONE in t, "first-boot-complete anchor not found"
+t = t.replace(OLD_DONE, NEW_DONE, 1)
+
 open(p, "w").write(t)
-print("patched:", p)
+print("patched:", p, "(startup-config hook + EVPN-MH reboot + switchd-ready fix + overlay-reuse login)")
