@@ -222,22 +222,63 @@ class PAN_vm(vrnetlab.VM):
                             "element": "<mtu>9216</mtu>"}, verify=False, timeout=60)
         job = self.panos_commit_configuration(api_key, description="ecloud jumbo-frame")
         self._api_wait_job(api_key, job, "jumbo commit")
-        self._api_op(api_key, "<request><restart><system></system></request></restart>", timeout=30)
-        self.logger.info("reboot requested; waiting for the API to come back (PAN-OS 12: several minutes)")
-        time.sleep(90)
-        for attempt in range(80):
+        # PAN-OS 12 answers "Command succeeded" to <request><restart><system/> over the API but does
+        # NOT reboot (verified: uptime kept climbing, jumbo stayed off, config commit failed again).
+        # Use the one lever the guest cannot ignore: a QEMU system_reset on the monitor. It is a
+        # clean power-cycle; PAN-OS boots normally and comes up in jumbo mode.
+        self.logger.info("Phase 1: QEMU system_reset (API restart is a no-op on PAN-OS 12)")
+        try:
+            self.qm.write(b"system_reset\r\n")
+        except Exception as exc:
+            self.logger.warning("qemu monitor system_reset failed (%s); trying API restart", exc)
+            self._api_op(api_key, "<request><restart><system></system></request></restart>", timeout=30)
+        # detect the REAL down-then-up: the API must first FAIL (box rebooting), then succeed
+        self.logger.info("waiting for the box to go down ...")
+        went_down = False
+        for attempt in range(60):
+            time.sleep(5)
+            try:
+                requests.get("https://127.0.0.1/api/?type=keygen&user=x&password=x", verify=False, timeout=5)
+            except Exception:
+                went_down = True
+                break
+        self.logger.info("box down=%s; waiting for the API to come back (PAN-OS 12: several minutes)", went_down)
+        time.sleep(120)
+        for attempt in range(90):
             try:
                 k = self.panos_api_login()
                 if k:
-                    # the API answers before the mgmt plane is fully ready; require an op to succeed
                     r = self._api_op(k, "<show><system><info></info></system></show>", timeout=30)
                     if "<hostname>" in r:
-                        self.logger.info("PAN back after jumbo reboot")
+                        up = re.search(r"<uptime>([^<]+)", r)
+                        self.logger.info("PAN back after jumbo reboot (uptime %s)", up.group(1) if up else "?")
+                        # after a reboot PAN-OS runs its own auto-commit and REJECTS user commits
+                        # ("Commit job was not queued since auto-commit not yet finished") until it is
+                        # done. Wait for the AutoCom job to reach FIN before returning.
+                        self._wait_autocommit(k)
                         return k
             except Exception:
                 pass
             time.sleep(10)
         raise RuntimeError("PAN did not come back after the jumbo-frame reboot")
+
+    def _wait_autocommit(self, api_key, tries=60):
+        for attempt in range(tries):
+            try:
+                j = self._api_op(api_key, "<show><jobs><all></all></jobs></show>", timeout=30)
+                # any AutoCom job that is not FIN => still running
+                jobs = re.findall(r"<job>(.*?)</job>", j, re.S)
+                ac = [x for x in jobs if "<type>AutoCom</type>" in x]
+                if ac and all("<status>FIN</status>" in x for x in ac):
+                    self.logger.info("post-reboot auto-commit finished")
+                    return
+                if not ac and attempt > 3:
+                    self.logger.info("no AutoCom job listed; proceeding")
+                    return
+            except Exception:
+                pass
+            time.sleep(10)
+        self.logger.warning("auto-commit wait timed out; proceeding anyway")
 
     def startup_config_xml(self):
         """ecloud: load a full <config> XML tree via the API (import -> load -> commit -> poll).
