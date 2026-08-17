@@ -85,14 +85,6 @@
     <certificate>
       
     </certificate>
-    <ssl-tls-service-profile>
-      <entry name="MGMT-SSL">
-        <certificate>fw-mgmt</certificate>
-        <protocol-settings>
-          <min-version>tls1-2</min-version>
-        </protocol-settings>
-      </entry>
-    </ssl-tls-service-profile>
   </shared>
   <devices>
     <entry name="localhost.localdomain">
@@ -576,7 +568,6 @@
               </version>
             </access-setting>
           </snmp-setting>
-          <ssl-tls-service-profile>MGMT-SSL</ssl-tls-service-profile>
         </system>
         <setting>
           <config>

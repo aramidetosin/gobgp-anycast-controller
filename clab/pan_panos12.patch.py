@@ -202,10 +202,24 @@ NEW_SC = '''    STARTUP_CONFIG_XML = "/config/startup-config.xml"
         with open(self.STARTUP_CONFIG_XML, "rb") as f:
             resp = requests.post(url, files={"file": (fname, f, "application/xml")}, verify=False, timeout=120)
         self.logger.info("import configuration: %s", ET.fromstring(resp.content).get("status"))
-        # 2) load it as the candidate config
-        cmd = f"<load><config><from>{fname}</from></config></load>"
-        resp = requests.post(f"https://127.0.0.1/api/?type=op&key={api_key}", data={"cmd": cmd}, verify=False, timeout=120)
-        self.logger.info("load config from %s: %s %s", fname, ET.fromstring(resp.content).get("status"), resp.content.decode()[:200])
+        # 2) merge it into the candidate section by section (PARTIAL load, mode merge). A whole-tree
+        #    `load config from` replaces the candidate and hides validation reasons; partial merge onto
+        #    the box's baseline validated OK and gave real error text during debugging.
+        dev = "/config/devices/entry[@name='localhost.localdomain']"
+        for from_x, to_x in [(f"{dev}/deviceconfig", f"{dev}/deviceconfig"), (f"{dev}/network", f"{dev}/network"),
+                             (f"{dev}/vsys", f"{dev}/vsys"), ("/config/shared", "/config/shared")]:
+            cmd = (f"<load><config><partial><mode>merge</mode><from-xpath>{from_x}</from-xpath>"
+                   f"<to-xpath>{to_x}</to-xpath><from>{fname}</from></partial></config></load>")
+            resp = requests.post(f"https://127.0.0.1/api/?type=op&key={api_key}", data={"cmd": cmd}, verify=False, timeout=120)
+            self.logger.info("partial load %s: %s", to_x.split("/")[-1], ET.fromstring(resp.content).get("status"))
+        # validate first so a bad config is reported with its reason, not a bare FAIL
+        v = self._api_op(api_key, "<validate><full></full></validate>", timeout=120)
+        vj = re.search(r"<job>(\d+)</job>", v)
+        if vj:
+            vr = self._api_wait_job(api_key, vj.group(1), "validate")
+            if vr != "OK":
+                self.logger.error("startup-config did NOT validate; skipping commit")
+                return
         # 3) commit + poll (reuse the launcher's helpers)
         job = self.panos_commit_configuration(api_key, description="ecloud startup-config.xml")
         self.logger.info("commit job %s submitted", job)

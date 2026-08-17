@@ -18,6 +18,12 @@ xml = re.sub(r"\s*<ip-address>172\.29\.129\.\d+</ip-address>", "", xml)
 xml = re.sub(r"\s*<default-gateway>172\.29\.129\.254</default-gateway>", "", xml)
 xml = re.sub(r"<mgt-config>.*?</mgt-config>", "", xml, flags=re.S)
 xml = re.sub(r'<entry name="fw-mgmt">.*?</entry>', "", xml, flags=re.S)
+# ...and everything that REFERENCES that cert, or validation fails with
+# "MGMT-SSL -> certificate 'fw-mgmt' is not a valid reference": the ssl-tls-service-profile that
+# uses it, and the mgmt-interface binding of that profile. PAN falls back to its self-signed cert.
+xml = re.sub(r'\s*<entry name="MGMT-SSL">.*?</entry>', "", xml, flags=re.S)
+xml = re.sub(r"\s*<ssl-tls-service-profile>MGMT-SSL</ssl-tls-service-profile>", "", xml)
+xml = re.sub(r"\s*<ssl-tls-service-profile>\s*</ssl-tls-service-profile>", "", xml, flags=re.S)  # now-empty container
 # the mgmt <netmask> only makes sense with the ip; drop it if it is the mgmt one (system-level, not an interface)
 xml = re.sub(r"(<system>.*?)\s*<netmask>255\.255\.255\.0</netmask>", r"\1", xml, count=1, flags=re.S)
 try:
