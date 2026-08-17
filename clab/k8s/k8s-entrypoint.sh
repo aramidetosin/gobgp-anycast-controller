@@ -4,7 +4,15 @@
 # cgroup as PID 1 so containerd/runc can delegate controllers to the k8s.io child), sets up the
 # dual-homed fabric bond from env, then launches k3s by role. All node-specific values come from
 # clab `env:`.
-set -e
+# PID-1 robustness (learned the hard way): this container is `restart: always`, and if PID 1 ever
+# exits, docker recreates the netns and the clab-wired fabric veths (eth1/eth2) are GONE for good
+# (clab does not re-wire on a docker restart) -> the node is stranded until a redeploy. So PID 1 must
+# be effectively unkillable by anything transient:
+#   * no `set -e` -> a failed setup command can never abort the script before the supervise loop
+#   * trap TERM/HUP -> a stray `docker stop`/SIGTERM can't end PID 1 (real teardown = clab destroy =
+#     docker rm -f = SIGKILL, which is untrappable, so this does not impede teardown)
+set +e
+trap '' TERM HUP
 CG=/sys/fs/cgroup
 log() { echo "[k8s-entrypoint] $*"; }
 
