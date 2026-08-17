@@ -217,31 +217,48 @@ class PAN_vm(vrnetlab.VM):
         ethernet1/1 mtu is greater than 1500") until the box has rebooted in jumbo mode.
         Phase 1 of the XML bootstrap: set jumbo, commit, reboot, wait for the API to return."""
         self.logger.info("Phase 1: enabling jumbo-frame mode (mtu 9216), committing, rebooting")
+        # The config element <deviceconfig><setting><jumbo-frame><mtu> only sets the SIZE. The MODE is an
+        # OPERATIONAL toggle: `set system setting jumbo-frame on` (returns "Device is now in Jumbo-Frame
+        # mode, please reboot device"). Verified: config-only + reboot (hard or graceful) left mode=off;
+        # the op command flipped it to on immediately (pending reboot). Do both, then reboot.
+        r = self._api_op(api_key, "<set><system><setting><jumbo-frame>on</jumbo-frame></setting></system></set>", timeout=60)
+        self.logger.info("op set jumbo-frame on: %s", re.sub(r"<[^>]+>", " ", r).strip()[:120])
         requests.post(f"https://127.0.0.1/api/?type=config&action=set&key={api_key}",
                       data={"xpath": "/config/devices/entry[@name='localhost.localdomain']/deviceconfig/setting/jumbo-frame",
                             "element": "<mtu>9216</mtu>"}, verify=False, timeout=60)
         job = self.panos_commit_configuration(api_key, description="ecloud jumbo-frame")
         self._api_wait_job(api_key, job, "jumbo commit")
-        # PAN-OS 12 answers "Command succeeded" to <request><restart><system/> over the API but does
-        # NOT reboot (verified: uptime kept climbing, jumbo stayed off, config commit failed again).
-        # Use the one lever the guest cannot ignore: a QEMU system_reset on the monitor. It is a
-        # clean power-cycle; PAN-OS boots normally and comes up in jumbo mode.
-        self.logger.info("Phase 1: QEMU system_reset (API restart is a no-op on PAN-OS 12)")
-        try:
-            self.qm.write(b"system_reset\r\n")
-        except Exception as exc:
-            self.logger.warning("qemu monitor system_reset failed (%s); trying API restart", exc)
-            self._api_op(api_key, "<request><restart><system></system></request></restart>", timeout=30)
-        # detect the REAL down-then-up: the API must first FAIL (box rebooting), then succeed
-        self.logger.info("waiting for the box to go down ...")
+        # The jumbo mode only becomes ACTIVE when the dataplane re-initialises on a GRACEFUL restart.
+        # A QEMU hard reset right after the commit leaves the config element persisted but the mode
+        # off (verified: config 9216, uptime 4 min, mode off). And <request><restart><system/> over the
+        # API is silently ignored WHILE the first-boot auto-commit is still running, but works once
+        # the box is settled (verified: went down 5 s after the call). So: wait for auto-commit to be
+        # clear, then graceful API restart; fall back to QEMU system_reset only if it does not go down.
+        self._wait_autocommit(api_key)
+        time.sleep(15)
+        self.logger.info("Phase 1: graceful restart via the API (post auto-commit)")
+        self._api_op(api_key, "<request><restart><system></system></restart></request>", timeout=30)
         went_down = False
-        for attempt in range(60):
+        for attempt in range(24):
             time.sleep(5)
             try:
                 requests.get("https://127.0.0.1/api/?type=keygen&user=x&password=x", verify=False, timeout=5)
             except Exception:
                 went_down = True
                 break
+        if not went_down:
+            self.logger.warning("API restart did not take the box down; falling back to QEMU system_reset")
+            try:
+                self.qm.write(b"system_reset\r\n")
+            except Exception as exc:
+                self.logger.warning("qemu monitor system_reset failed: %s", exc)
+            for attempt in range(60):
+                time.sleep(5)
+                try:
+                    requests.get("https://127.0.0.1/api/?type=keygen&user=x&password=x", verify=False, timeout=5)
+                except Exception:
+                    went_down = True
+                    break
         self.logger.info("box down=%s; waiting for the API to come back (PAN-OS 12: several minutes)", went_down)
         time.sleep(120)
         for attempt in range(90):
