@@ -53,6 +53,21 @@ if [ -n "$NODE_BOND_IP" ]; then
   fi
 fi
 
+# ---- 3b) SSH access (dropbear) for operator login, faithful to the real lab: user/Test123 ----
+id user >/dev/null 2>&1 || adduser -D -s /bin/sh user 2>/dev/null || true
+echo "user:Test123" | chpasswd 2>/dev/null || true
+echo "root:Test123" | chpasswd 2>/dev/null || true
+addgroup user wheel 2>/dev/null || true
+pgrep -x dropbear >/dev/null 2>&1 || (mkdir -p /etc/dropbear; dropbear -R -p 22 >/dev/null 2>&1) || true
+log "sshd (dropbear) up; login user/Test123"
+
+# ---- 3c) cluster self-config: the cluster-init master installs Cilium + BGP + the dc-demo app
+#         in the background once the cluster forms (idempotent; makes the k8s layer bootstrap too) ----
+if [ "$K3S_ROLE" = "server-init" ] && [ -x /opt/ecloud/cluster-bootstrap.sh ]; then
+  ( /opt/ecloud/cluster-bootstrap.sh "$ECLOUD_DC" "$NODE_IP" "$ECLOUD_POD_CIDR" "$ECLOUD_EXPECT_NODES" > /var/log/cluster-bootstrap.log 2>&1 ) &
+  log "cluster-bootstrap spawned (dc=$ECLOUD_DC expect=$ECLOUD_EXPECT_NODES)"
+fi
+
 # ---- 4) launch k3s by role, SUPERVISED (entrypoint stays PID 1 so a k3s crash does not kill the
 #         container and lose the clab-wired interfaces). Join roles wait for the server API first. ----
 KA="--kubelet-arg=cgroups-per-qos=false --kubelet-arg=enforce-node-allocatable= --kubelet-arg=fail-swap-on=false"

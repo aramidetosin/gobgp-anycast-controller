@@ -150,6 +150,9 @@ topology:
         NODE_GW: "10.167.10.1"
         NODE_DNS: "10.167.30.10"
         NODE_MAC: "50:00:00:0b:00:01"
+        ECLOUD_DC: "dc1"
+        ECLOUD_POD_CIDR: "10.244.0.0/16"
+        ECLOUD_EXPECT_NODES: "6"
     k8s-master-2:
       kind: linux
       image: ecloud-k8s-host:1.31.5
@@ -273,6 +276,9 @@ topology:
         NODE_GW: "10.168.10.1"
         NODE_DNS: "10.168.30.10"
         NODE_MAC: "50:00:00:1f:00:01"
+        ECLOUD_DC: "dc2"
+        ECLOUD_POD_CIDR: "10.245.0.0/16"
+        ECLOUD_EXPECT_NODES: "4"
     dc2-k8s-worker-1:
       kind: linux
       image: ecloud-k8s-host:1.31.5

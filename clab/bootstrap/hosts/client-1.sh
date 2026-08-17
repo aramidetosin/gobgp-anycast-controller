@@ -7,4 +7,5 @@ ip addr add 10.80.15.103/24 dev eth1
 while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
 ip route replace default via 10.80.15.1 dev eth1
 printf 'nameserver 10.80.15.41\nsearch ecloud.lab\n' > /etc/resolv.conf
+id user >/dev/null 2>&1 || adduser -D -s /bin/sh user 2>/dev/null; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; addgroup user wheel 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
 echo "client-1: eth1 10.80.15.103/24 via 10.80.15.1"

@@ -15,4 +15,5 @@ ip addr add 10.168.10.23/24 dev bond0
 while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
 ip route replace default via 10.168.10.1 dev bond0
 printf 'nameserver 10.168.30.10\nsearch ecloud.lab\n' > /etc/resolv.conf
+id user >/dev/null 2>&1 || adduser -D -s /bin/sh user 2>/dev/null; echo "user:Test123" | chpasswd 2>/dev/null; echo "root:Test123" | chpasswd 2>/dev/null; addgroup user wheel 2>/dev/null; pgrep -x dropbear >/dev/null 2>&1 || dropbear -R -p 22 >/dev/null 2>&1
 echo "dc2-k8s-worker-3: bond0 10.168.10.23/24 via 10.168.10.1 dns 10.168.30.10"
