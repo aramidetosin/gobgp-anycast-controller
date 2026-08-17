@@ -36,7 +36,7 @@ push(){
   #    literally sets the cumulus password hash to '*' = ACCOUNT LOCKED, killing SSH on every
   #    switch it is applied to. Learned the hard way 2026-08-17 (6 switches locked out).
   grep -E '^nv set' "$f" \
-    | grep -vE 'interface eth0|vrf mgmt (ip|router)|system hostname|snmp-server.*REDACTED|REDACTED|system aaa user' \
+    | grep -vE 'interface eth0|vrf mgmt (ip|router)|snmp-server.*REDACTED|REDACTED|system aaa user' \
     > /tmp/push-$n.nv
   echo "  $n ($ip): $(wc -l < /tmp/push-$n.nv) nv-set lines"
   # replay in one shell session, then apply
