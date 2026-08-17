@@ -10,6 +10,9 @@ ip link set eth1 master bond0; ip link set eth2 master bond0
 ip link set eth1 mtu 9000; ip link set eth2 mtu 9000; ip link set bond0 mtu 9000
 ip link set eth1 up; ip link set eth2 up; ip link set bond0 up
 ip addr add 10.167.10.13/24 dev bond0
-ip route replace default via 10.167.10.1 dev bond0 metric 50
+# drop docker's metric-0 eth0 (mgmt) default so the FABRIC (bond0) is the sole default; else
+# cross-subnet replies leave via mgmt and die. mgmt /24 stays (directly connected) for host SSH.
+while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
+ip route replace default via 10.167.10.1 dev bond0
 printf 'nameserver 10.167.30.10\nsearch ecloud.lab\n' > /etc/resolv.conf
 echo "k8s-master-3: bond0 10.167.10.13/24 via 10.167.10.1 dns 10.167.30.10"

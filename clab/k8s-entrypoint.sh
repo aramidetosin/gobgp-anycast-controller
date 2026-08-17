@@ -41,7 +41,13 @@ if [ -n "$NODE_BOND_IP" ]; then
     ip link set eth1 mtu 9000; ip link set eth2 mtu 9000; ip link set bond0 mtu 9000
     ip link set eth1 up; ip link set eth2 up; ip link set bond0 up
     ip addr add "$NODE_BOND_IP" dev bond0
-    [ -n "$NODE_GW" ] && ip route replace default via "$NODE_GW" dev bond0 metric 50
+    if [ -n "$NODE_GW" ]; then
+      # CRITICAL: docker gives eth0 (mgmt) a metric-0 default that beats a metric-50 bond0 default,
+      # so cross-subnet replies would leave via mgmt and die. Drop the eth0 default and make the
+      # FABRIC (bond0) the sole default. The mgmt /24 stays (directly connected) for host SSH.
+      while ip route show default dev eth0 2>/dev/null | grep -q .; do ip route del default dev eth0 2>/dev/null || break; done
+      ip route replace default via "$NODE_GW" dev bond0
+    fi
     printf 'nameserver %s\nsearch ecloud.lab\n' "${NODE_DNS:-10.167.30.10}" > /etc/resolv.conf
     log "bond0 $NODE_BOND_IP via ${NODE_GW:-none} dns ${NODE_DNS}"
   fi
