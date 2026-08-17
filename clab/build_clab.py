@@ -4,8 +4,8 @@ Every link below is a real EVE p2p network; nothing is inferred."""
 import os
 
 CVX_IMG = "vrnetlab/nvidia_cumulus-vx:5.12.0"
-PAN_IMG = "vrnetlab/vr-pan:12.1.2"
-HOST_IMG = "ubuntu:24.04"          # k8s nodes / clients / svc / gobgp: plain linux kind, provision later
+PAN_IMG = "vrnetlab/paloalto_pa-vm:12.1.2"
+HOST_IMG = "ghcr.io/srl-labs/network-multitool"   # stays up + has ip/bond/tcpdump; real provisioning (k8s etc) comes later
 
 # ---------- nodes ----------
 switches = {
@@ -136,9 +136,10 @@ out.append("# ecloud two-DC EVPN-VXLAN POC, replicated in containerlab.")
 out.append("# Generated from the authoritative EVE-NG link map (84 p2p links + 1 shared internet segment).")
 out.append("# Switches: Cumulus VX 5.12.0 (vrnetlab VM-in-container). Firewalls: PA-VM 12.1.2 (vrnetlab).")
 out.append("# Hosts: plain linux containers, provisioned after deploy (k8s/Cilium, BIND, GoBGP, clients).")
-out.append("# NOTE: the nvidia_cumulusvx kind does NOT apply startup-config (verified in source: it only mounts")
-out.append("# /config as a persistent overlay + sets creds/hostname). Switch configs are pushed POST-deploy by")
-out.append("# push_configs.sh (SSH nv-set replay from fabric-evpn-mh/, or NVUE REST :8765). Creds cumulus/Clab123!.")
+out.append("# NOTE: stock nvidia_cumulusvx does NOT apply startup-config. OUR image carries a patched vrnetlab")
+out.append("# launcher (cvx_startup_config.patch.py) that applies /config/startup-config.cfg over SSH once switchd")
+out.append("# is up, so the fabric BOOTSTRAPS ITSELF on `clab deploy`. bootstrap/*.cfg = filtered nv-set lines")
+out.append("# (no eth0/mgmt/hostname/REDACTED/aaa-user) from fabric-evpn-mh/. Creds cumulus/Clab123!.")
 out.append("name: ecloud")
 out.append("mgmt:")
 out.append("  network: ecloud-mgmt")
@@ -161,6 +162,7 @@ for name,dc in switches.items():
     out.append(f"      kind: nvidia_cumulusvx")
     out.append(f"      mgmt-ipv4: {mgmt_ip[name]}")
     out.append(f"      group: {dc}")
+    out.append(f"      startup-config: bootstrap/{name}.cfg   # applied at FIRST BOOT by the patched launcher")
 for fw in firewalls:
     mgmt_ip[fw] = f"172.29.129.{ipn}"; ipn += 1
     out.append(f"    {fw}:")

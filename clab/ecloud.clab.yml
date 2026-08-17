@@ -2,9 +2,10 @@
 # Generated from the authoritative EVE-NG link map (84 p2p links + 1 shared internet segment).
 # Switches: Cumulus VX 5.12.0 (vrnetlab VM-in-container). Firewalls: PA-VM 12.1.2 (vrnetlab).
 # Hosts: plain linux containers, provisioned after deploy (k8s/Cilium, BIND, GoBGP, clients).
-# NOTE: the nvidia_cumulusvx kind does NOT apply startup-config (verified in source: it only mounts
-# /config as a persistent overlay + sets creds/hostname). Switch configs are pushed POST-deploy by
-# push_configs.sh (SSH nv-set replay from fabric-evpn-mh/, or NVUE REST :8765). Creds cumulus/Clab123!.
+# NOTE: stock nvidia_cumulusvx does NOT apply startup-config. OUR image carries a patched vrnetlab
+# launcher (cvx_startup_config.patch.py) that applies /config/startup-config.cfg over SSH once switchd
+# is up, so the fabric BOOTSTRAPS ITSELF on `clab deploy`. bootstrap/*.cfg = filtered nv-set lines
+# (no eth0/mgmt/hostname/REDACTED/aaa-user) from fabric-evpn-mh/. Creds cumulus/Clab123!.
 name: ecloud
 mgmt:
   network: ecloud-mgmt
@@ -14,90 +15,110 @@ topology:
     nvidia_cumulusvx:
       image: vrnetlab/nvidia_cumulus-vx:5.12.0
     paloalto_panos:
-      image: vrnetlab/vr-pan:12.1.2
+      image: vrnetlab/paloalto_pa-vm:12.1.2
     linux:
-      image: ubuntu:24.04
+      image: ghcr.io/srl-labs/network-multitool
   nodes:
     spine-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.11
       group: dc1
+      startup-config: bootstrap/spine-1.cfg   # applied at FIRST BOOT by the patched launcher
     spine-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.12
       group: dc1
+      startup-config: bootstrap/spine-2.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-k8s-master-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.13
       group: dc1
+      startup-config: bootstrap/leaf-k8s-master-1.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-k8s-master-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.14
       group: dc1
+      startup-config: bootstrap/leaf-k8s-master-2.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-k8s-worker-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.15
       group: dc1
+      startup-config: bootstrap/leaf-k8s-worker-1.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-k8s-worker-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.16
       group: dc1
+      startup-config: bootstrap/leaf-k8s-worker-2.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-service-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.17
       group: dc1
+      startup-config: bootstrap/leaf-service-1.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-service-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.18
       group: dc1
+      startup-config: bootstrap/leaf-service-2.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-border-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.19
       group: dc1
+      startup-config: bootstrap/leaf-border-1.cfg   # applied at FIRST BOOT by the patched launcher
     leaf-border-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.20
       group: dc1
+      startup-config: bootstrap/leaf-border-2.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-spine-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.21
       group: dc2
+      startup-config: bootstrap/dc2-spine-1.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-spine-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.22
       group: dc2
+      startup-config: bootstrap/dc2-spine-2.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-k8s-leaf-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.23
       group: dc2
+      startup-config: bootstrap/dc2-k8s-leaf-1.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-k8s-leaf-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.24
       group: dc2
+      startup-config: bootstrap/dc2-k8s-leaf-2.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-svc-leaf-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.25
       group: dc2
+      startup-config: bootstrap/dc2-svc-leaf-1.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-svc-leaf-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.26
       group: dc2
+      startup-config: bootstrap/dc2-svc-leaf-2.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-border-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.27
       group: dc2
+      startup-config: bootstrap/dc2-border-1.cfg   # applied at FIRST BOOT by the patched launcher
     dc2-border-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.28
       group: dc2
+      startup-config: bootstrap/dc2-border-2.cfg   # applied at FIRST BOOT by the patched launcher
     br-agg-sw-1:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.29
       group: aggr
+      startup-config: bootstrap/br-agg-sw-1.cfg   # applied at FIRST BOOT by the patched launcher
     br-agg-sw-2:
       kind: nvidia_cumulusvx
       mgmt-ipv4: 172.29.129.30
       group: aggr
+      startup-config: bootstrap/br-agg-sw-2.cfg   # applied at FIRST BOOT by the patched launcher
     fw-pri:
       kind: paloalto_panos
       mgmt-ipv4: 172.29.129.31
