@@ -35,15 +35,157 @@ t = t.replace(OLD_CONFIRM, NEW_CONFIRM, 1)
 # ("admin@PA-VM> set admin@PA-VM> set cli ..."), so the buffer is never empty, the kick is never
 # sent, FIN/PEND never appear, and the loop spins forever (observed 2+ min stall). Fix: on any
 # no-match, sleep and send the kick unconditionally.
-OLD_LOOP = '''            elif res == b"":
+# Root cause: the scrapli wrapper's expect() calls a BLOCKING channel.read() (timeout_transport 3600s);
+# its 1s "timeout" is only checked after read() returns. Once PAN-OS 12 sits quietly at the prompt in
+# scripting-mode, read() never returns -> the loop's expect blocks for an hour -> no kick is ever sent.
+# So the kick must be sent BEFORE each expect, guaranteeing output that unblocks the read.
+OLD_LOOP = '''        self.wait_write("", None)
+        while True:
+            (ridx, match, res) = self.tn.expect([b"FIN", b"PEND"], 1)
+            if match:
+                if ridx == 0:  # login
+                    self.logger.debug("auto commit complete, begin configuration")
+                    break
+                elif ridx == 1:
+                    self.logger.debug("auto commit still pending, sleeping...")
+                    time.sleep(10)
+                    self.wait_write("show jobs processed", wait=None)
+            elif res == b"":
                 time.sleep(10)
                 self.wait_write("show jobs processed", wait=None)'''
-NEW_LOOP = '''            else:
-                # ecloud fix: kick unconditionally on no-match (PAN-OS 12 console is never silent)
-                time.sleep(10)
-                self.wait_write("show jobs processed", wait=None)'''
+NEW_LOOP = '''        self.wait_write("", None)
+        while True:
+            # ecloud fix: send the kick FIRST so the (blocking) console read always has output to return
+            self.wait_write("show jobs processed", wait=None)
+            (ridx, match, res) = self.tn.expect([b"FIN", b"PEND"], 15)
+            if match:
+                if ridx == 0:  # login
+                    self.logger.debug("auto commit complete, begin configuration")
+                    break
+                elif ridx == 1:
+                    self.logger.debug("auto commit still pending, sleeping...")
+                    time.sleep(10)
+            else:
+                time.sleep(10)'''
 assert OLD_LOOP in t, "auto-commit loop anchor not found"
 t = t.replace(OLD_LOOP, NEW_LOOP, 1)
 
+# Fix 4: XML startup-config via the API. Replaying a `show config` set-format export line by line
+# fails on PAN-OS (lines are validated as they are entered and the export is not in dependency
+# order: zones/HA/BGP peers reference interfaces / peer-AS defined later -> "constraints failed",
+# "not a valid reference", "Invalid syntax" on multi-word values -> commit fails -> EMPTY config).
+# A full <config> XML tree loaded via the API (import -> load config from -> commit) is validated
+# as a whole and has no ordering problem. If /config/startup-config.xml exists, use that path
+# (reusing the launcher's own import/commit/poll helpers) instead of the set-line replay.
+OLD_SC = '''    def startup_config(self):
+        """Load additional config provided by user."""
+
+        if not os.path.exists(STARTUP_CONFIG_FILE):'''
+NEW_SC = '''    STARTUP_CONFIG_XML = "/config/startup-config.xml"
+
+    def _api_op(self, api_key, cmd, timeout=120):
+        return requests.post(f"https://127.0.0.1/api/?type=op&key={api_key}", data={"cmd": cmd}, verify=False, timeout=timeout).text
+
+    def _api_wait_job(self, api_key, job, what, tries=60):
+        for attempt in range(tries):
+            time.sleep(10)
+            root = ET.fromstring(self.check_config_commit_status(api_key, job))
+            st = root.find(".//job/status"); res = root.find(".//job/result"); det = root.find(".//job/details")
+            if st is not None and st.text == "FIN":
+                r = res.text if res is not None else "?"
+                self.logger.info("%s job %s finished: %s %s", what, job, r,
+                                 ("".join(det.itertext())[:300] if det is not None else ""))
+                return r
+        self.logger.warning("%s job %s did not finish", what, job)
+        return None
+
+    def _enable_jumbo_and_reboot(self, api_key):
+        """PAN-OS validates interface MTUs against the ACTIVE jumbo-frame mode, and jumbo-frame
+        mode only takes effect after a reboot. A fresh PA-VM is jumbo=off, so a config with
+        9216 interfaces fails validation ("device is not in jumbo-frame mode but interface
+        ethernet1/1 mtu is greater than 1500") until the box has rebooted in jumbo mode.
+        Phase 1 of the XML bootstrap: set jumbo, commit, reboot, wait for the API to return."""
+        self.logger.info("Phase 1: enabling jumbo-frame mode (mtu 9216), committing, rebooting")
+        requests.post(f"https://127.0.0.1/api/?type=config&action=set&key={api_key}",
+                      data={"xpath": "/config/devices/entry[@name='localhost.localdomain']/deviceconfig/setting/jumbo-frame",
+                            "element": "<mtu>9216</mtu>"}, verify=False, timeout=60)
+        job = self.panos_commit_configuration(api_key, description="ecloud jumbo-frame")
+        self._api_wait_job(api_key, job, "jumbo commit")
+        self._api_op(api_key, "<request><restart><system></system></request></restart>", timeout=30)
+        self.logger.info("reboot requested; waiting for the API to come back (PAN-OS 12: several minutes)")
+        time.sleep(90)
+        for attempt in range(80):
+            try:
+                k = self.panos_api_login()
+                if k:
+                    # the API answers before the mgmt plane is fully ready; require an op to succeed
+                    r = self._api_op(k, "<show><system><info></info></system></show>", timeout=30)
+                    if "<hostname>" in r:
+                        self.logger.info("PAN back after jumbo reboot")
+                        return k
+            except Exception:
+                pass
+            time.sleep(10)
+        raise RuntimeError("PAN did not come back after the jumbo-frame reboot")
+
+    def startup_config_xml(self):
+        """ecloud: load a full <config> XML tree via the API (import -> load -> commit -> poll).
+        If the config uses jumbo frames, do the jumbo-enable + reboot phase first."""
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        self.logger.info(f"Applying XML startup config {self.STARTUP_CONFIG_XML} via the API")
+        api_key = self.panos_api_login()
+        with open(self.STARTUP_CONFIG_XML, "rb") as f:
+            blob = f.read()
+        if b"<jumbo-frame>" in blob:
+            api_key = self._enable_jumbo_and_reboot(api_key)
+        fname = os.path.basename(self.STARTUP_CONFIG_XML)
+        # 1) import as a configuration file
+        url = f"https://127.0.0.1/api/?type=import&category=configuration&key={api_key}"
+        with open(self.STARTUP_CONFIG_XML, "rb") as f:
+            resp = requests.post(url, files={"file": (fname, f, "application/xml")}, verify=False, timeout=120)
+        self.logger.info("import configuration: %s", ET.fromstring(resp.content).get("status"))
+        # 2) load it as the candidate config
+        cmd = f"<load><config><from>{fname}</from></config></load>"
+        resp = requests.post(f"https://127.0.0.1/api/?type=op&key={api_key}", data={"cmd": cmd}, verify=False, timeout=120)
+        self.logger.info("load config from %s: %s %s", fname, ET.fromstring(resp.content).get("status"), resp.content.decode()[:200])
+        # 3) commit + poll (reuse the launcher's helpers)
+        job = self.panos_commit_configuration(api_key, description="ecloud startup-config.xml")
+        self.logger.info("commit job %s submitted", job)
+        for attempt in range(60):
+            time.sleep(10)
+            root = ET.fromstring(self.check_config_commit_status(api_key, job))
+            st = root.find(".//job/status"); pr = root.find(".//job/progress"); res = root.find(".//job/result")
+            st = st.text if st is not None else None
+            if st == "FIN":
+                self.logger.info("XML startup config commit finished: result=%s", res.text if res is not None else "?")
+                det = root.find(".//job/details")
+                if det is not None and det.text:
+                    self.logger.info("commit details: %s", "".join(det.itertext())[:400])
+                return
+            self.logger.info("commit status %s progress %s", st, pr.text if pr is not None else "?")
+        self.logger.warning("XML startup config commit did not finish in time")
+
+    def startup_config(self):
+        """Load additional config provided by user."""
+
+        # ecloud: containerlab always delivers the startup-config as /config/startup-config.cfg.
+        # If that file is an XML <config> tree, load it via the API path; else fall through to
+        # the stock set-line replay.
+        if os.path.exists(STARTUP_CONFIG_FILE):
+            with open(STARTUP_CONFIG_FILE, "rb") as f:
+                head = f.read(200)
+            if b"<config" in head:
+                import shutil
+                shutil.copy(STARTUP_CONFIG_FILE, self.STARTUP_CONFIG_XML)
+                try:
+                    self.startup_config_xml()
+                except Exception as exc:
+                    self.logger.error("XML startup config failed: %s", exc)
+                return
+
+        if not os.path.exists(STARTUP_CONFIG_FILE):'''
+assert OLD_SC in t, "startup_config anchor not found"
+t = t.replace(OLD_SC, NEW_SC, 1)
+
 open(p, "w").write(t)
-print("patched:", p, "(PAN-OS 12: prompt nudge + liberal prompt + unconditional auto-commit kick)")
+print("patched:", p, "(PAN-OS 12: prompt nudge + liberal prompt + kick-first auto-commit + XML startup-config via API)")

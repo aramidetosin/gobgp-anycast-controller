@@ -170,7 +170,7 @@ for fw in firewalls:
     out.append(f"      mgmt-ipv4: {mgmt_ip[fw]}")
     out.append(f"      group: firewall")
     # the vrnetlab PAN launcher natively applies /config/startup-config.cfg (set-format lines, then commit)
-    out.append(f"      startup-config: bootstrap/{fw}.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)")
+    out.append(f"      startup-config: bootstrap/{fw}.xml   # FULL live <config> XML (interfaces/VR+BGP/HA/zones/NAT/security), loaded via API")
     # containerlab's paloalto_panos kind hard-codes QEMU_CPU=qemu64 (nodes/vr_pan/vr-pan.go:66). qemu64 lacks
     # x86-64-v2 (SSE4.2/POPCNT/CX16) and PAN-OS 12 glibc dies with "CPU does not support x86-64-v2" +
     # rcu stalls. The kind merges user env OVER its defaults, so override to the host CPU model.

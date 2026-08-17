@@ -123,7 +123,7 @@ topology:
       kind: paloalto_panos
       mgmt-ipv4: 172.29.129.31
       group: firewall
-      startup-config: bootstrap/fw-pri.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)
+      startup-config: bootstrap/fw-pri.xml   # FULL live <config> XML (interfaces/VR+BGP/HA/zones/NAT/security), loaded via API
       env:
         QEMU_CPU: host
         QEMU_SMP: 8
@@ -132,7 +132,7 @@ topology:
       kind: paloalto_panos
       mgmt-ipv4: 172.29.129.32
       group: firewall
-      startup-config: bootstrap/fw-sec.cfg   # FULL live config in set format (interfaces/VR+BGP/HA/NAT/security)
+      startup-config: bootstrap/fw-sec.xml   # FULL live <config> XML (interfaces/VR+BGP/HA/zones/NAT/security), loaded via API
       env:
         QEMU_CPU: host
         QEMU_SMP: 8
