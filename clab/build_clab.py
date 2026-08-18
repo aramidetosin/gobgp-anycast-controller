@@ -133,7 +133,8 @@ for line in RAW.strip().splitlines():
 # ---------- emit YAML ----------
 out=[]
 out.append("# ecloud two-DC EVPN-VXLAN POC, replicated in containerlab.")
-out.append("# Generated from the authoritative EVE-NG link map (84 p2p links + 1 shared internet segment).")
+out.append("# Generated from the EVE-NG link map captured live via the EVE API (84 networks audited;")
+out.append("# 71 p2p links + the shared internet segment carried into clab; mgmt-only nets dropped).")
 out.append("# Switches: Cumulus VX 5.12.0 (vrnetlab VM-in-container). Firewalls: PA-VM 12.1.2 (vrnetlab).")
 out.append("# Hosts: plain linux containers, provisioned after deploy (k8s/Cilium, BIND, GoBGP, clients).")
 out.append("# NOTE: stock nvidia_cumulusvx does NOT apply startup-config. OUR image carries a patched vrnetlab")
@@ -163,6 +164,8 @@ for name,dc in switches.items():
     out.append(f"      mgmt-ipv4: {mgmt_ip[name]}")
     out.append(f"      group: {dc}")
     out.append(f"      startup-config: bootstrap/{name}.cfg   # applied at FIRST BOOT by the patched launcher")
+    out.append(f"      binds:")
+    out.append(f"        - bootstrap/hosts:/bootstrap-keys:ro   # optional authorized_keys, installed by the launcher")
 for fw in firewalls:
     mgmt_ip[fw] = f"172.29.129.{ipn}"; ipn += 1
     out.append(f"    {fw}:")
@@ -181,6 +184,8 @@ for fw in firewalls:
     # the live qemu cmdline). Match them via vrnetlab's QEMU_SMP / QEMU_MEMORY env overrides.
     out.append(f"        QEMU_SMP: 8")
     out.append(f"        QEMU_MEMORY: 16384")
+    out.append(f"      binds:")
+    out.append(f"        - bootstrap/hosts:/bootstrap-keys:ro   # optional authorized_keys, folded into the config commit")
 # ---- hosts: every one bootstraps at first start via exec of its own script (bind-mounted) ----
 import importlib.util, sys as _sys
 _spec = importlib.util.spec_from_file_location("hosts", os.path.join(os.path.dirname(__file__), "hosts.py"))
@@ -206,6 +211,8 @@ def k8s_node(h, grp):
     out.append(f"      image: ecloud-k8s-host:1.31.5")
     out.append(f"      mgmt-ipv4: {mgmt_ip[h]}")
     out.append(f"      group: {grp}")
+    out.append(f"      binds:")
+    out.append(f"        - bootstrap/hosts:/bootstrap:ro        # optional authorized_keys for the entrypoint")
     out.append(f"      env:")
     for k,v in env.items():
         out.append(f"        {k}: \"{v}\"")

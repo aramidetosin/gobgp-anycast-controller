@@ -1,111 +1,227 @@
-# ecloud two-DC lab, replicated in containerlab
+# ecloud: a two-DC EVPN-VXLAN datacenter in containerlab, fully self-bootstrapping
 
-A faithful containerlab replica of the ecloud POC: **39 nodes, 75 links**, generated from
-the authoritative EVE-NG link map (every p2p link captured live 2026-08-17, none inferred).
-Lab lives at `/root/containerlab/ecloud/` on `home-eve` (96 cores, 314GB RAM, bare-metal KVM,
-containerlab 0.78.2, vrnetlab checkout at `/root/containerlab/vrnetlab` updated to 2026-07-23).
-The whole lab fits with room to spare.
+A faithful containerlab replica of the ecloud POC: **two EVPN-VXLAN datacenters
+(Cumulus Linux 5.12), a routed backbone, a Palo Alto Active/Active firewall pair,
+two k3s+Cilium Kubernetes clusters, a host-based GoBGP anycast controller, lab DNS,
+and external clients**. 39 nodes, 75 links, one command.
 
-## Research findings that shaped this (verified, not assumed)
+Everything configures itself on `clab deploy`. Cold-deploy proven: from
+`clab destroy --cleanup` to a working end-to-end demo (external client curls the
+anycast VIP by DNS name and lands in the GoBGP-steered DC through the firewalls)
+in ~20 hands-off minutes.
 
-1. **Cumulus VX is discontinued.** NVIDIA no longer distributes the image, and containerlab's
-   original container-native `cvx` kind is "not maintained/supported". The supported path is
-   the **`nvidia_cumulusvx` kind = Cumulus VX running as a QEMU VM inside a Docker container**,
-   built with vrnetlab (support merged 2026-06-07). We have the exact image the EVE lab runs
-   (`cumulus-linux-5.12.0-vx-amd64-qemu.qcow2`, pulled from EVE-NG), so we are not blocked.
-2. **The `nvidia_cumulusvx` kind does NOT apply `startup-config`** (read from source: it only
-   mounts `/config` as a persistent overlay and sets creds/hostname on first boot). Configs are
-   pushed **post-deploy** by `push_configs.sh` (SSH `nv set` replay), or via NVUE REST :8765.
-3. **Palo Alto**: vrnetlab `paloalto_panos` (tested up to PAN-OS 11.2.3). Our PA-VM 12.1.2 is
-   newer than the tested list; first boot must be verified, not assumed.
-4. **KVM required** on the host (`/dev/kvm`); Cumulus VX under software emulation is unusable.
-   home-eve is bare metal with KVM: fine.
-5. **Cilium BGP to a containerlab ToR** is a documented pattern (containerlab `k8s-kind` kind /
-   Cilium's own BGP dev env), so the k8s side ports cleanly.
+![topology](docs/topology.png)
 
-## What transfers 1:1, and what does not
+## What you get
 
-| Component | In clab | Notes |
-|---|---|---|
-| 20 Cumulus switches | `nvidia_cumulusvx` (VM-in-container) | 4GB RAM + 2 vCPU each = 80GB / 40 vCPU |
-| 2 PA-VM A/A | `paloalto_panos` (vrnetlab) | 6GB + 2 vCPU each; HA1/2/3 links = plain clab links |
-| 16 hosts (k8s, svc, clients, gobgp) | `linux` kind (ubuntu:24.04) | provisioned after deploy |
-| shared "internet" segment (EVE net54) | a `bridge` node | clab links are p2p only |
-| mgmt network | static `172.29.129.0/24` on the docker mgmt bridge | **an upgrade**: no more DHCP-drifting IPs |
-| **All VX quirks** | identical | it is the same 5.12 kernel + switchd: ES bonds need a reboot to converge, `evpn mh redirect-off` per boot, LACP 2-3 min |
+| Layer | Nodes | Self-bootstrap mechanism | Ready in |
+|---|---|---|---|
+| Fabric | 20x Cumulus VX 5.12 (2 DCs: spines, EVPN-MH leaf pairs, borders; 2 backbone aggr) | `startup-config` nv-set replay by a patched vrnetlab launcher; EVPN-MH leaves self-reboot + `evpn mh redirect-off` | ~4 min converged |
+| Firewalls | 2x PA-VM 12.1.2 Active/Active | full `<config>` XML loaded via the API by a patched launcher (2-phase: jumbo-frame + reboot, then load + commit) | ~19 min |
+| Kubernetes | DC1: 3 masters + 3 workers. DC2: 1 master + 3 workers (k3s 1.31.5, Cilium 1.16.5, airgap) | custom `ecloud-k8s-host` image: PID-1 cgroup-v2 entrypoint builds the LACP bond, launches k3s; the init master installs Cilium + BGP + the demo app + all VIPs | ~12 min both DCs Ready |
+| Anycast control | 2x GoBGP nodes (active/standby, AS 65400 iBGP to the backbone) | bootstrap script installs gobgpd + a Python "brain" that health-checks both DCs and steers each VIP | ~1 min |
+| Services | DNS (dnsmasq, `ecloud.lab` zone) + NTP on the svc nodes | bootstrap script + bind-mounted zone config | seconds |
+| Clients | 2 external clients on the "internet" segment | bootstrap script (IP, route, DNS via the firewall DNAT) | seconds |
 
-**Not a resource saving.** Every switch is still a full VM (same qcow2 as EVE). What you gain
-is a declarative, git-versioned, one-command (`clab deploy`) reproducible lab, not efficiency.
+The demo: `192.168.202.0` is a **global anycast VIP** served by both DCs.
+The GoBGP brain re-originates it (and two per-client VIPs, `.202.3` / `.202.4`)
+with next-hop = the chosen DC's regional VIP, decided by live HTTP health +
+per-VIP policy (failover / latency with hysteresis / static). External clients
+reach it through the PA pair's DNAT (`10.80.15.50` and friends), or by name
+(`app.ecloud.lab`, `dc1.…`, `dc2.…`) via the lab DNS.
 
-## Files
-- `ecloud.clab.yml` - the topology (generated; do not hand-edit, edit `build_clab.py`)
-- `build_clab.py` - generator holding the authoritative EVE link map + name/interface mapping
-- `push_configs.sh` - post-deploy config push (all 20 switches, ordered spines->leaves->borders->backbone)
-- `configs/{dc1,dc2,aggr}/` - the switch configs (copy of `fabric-evpn-mh/`, EVPN-MH design)
+The app behind the VIPs is the full ecloud demo (namespace `demo`): a per-DC
+themed UI with a region picker, `/docs` (the complete POC design document),
+a **cross-region consumer** that fetches the peer DC's dataset over the backbone
+via NodePort 30080 (`/api/consume?region=DC2`), and a **live traceroute path map**
+(`/api/trace?region=…`) that shows the actual hop-by-hop east-west path:
+pod, leaf SVI, border, backbone aggr, peer leaf, peer node. Its code + docs live
+in a ConfigMap that cluster-bootstrap builds with create/replace (never `apply`:
+docs.html is >256KB and overflows the last-applied annotation).
 
-## Interface / name mapping (from EVE)
-- switch ports: `swpN` unchanged. Host NICs: `data0 -> eth1`, `data1 -> eth2`. PAN: `eth1/N -> ethN`.
-- EVE names normalised: `DC-2-k8s-svc-1 -> dc2-svc-leaf-1`, `DC-2-k8s-border-1 -> dc2-border-1`,
-  `PaloAlto-pri-active-active-1 -> fw-pri`, `GOBGP-controller-1 -> gobgp-1`, `client -> client-1`.
+The whole suite has been **failover-drilled** (pod, anycast steering, host link,
+EVPN-MH leaf, backbone aggr, firewall): see
+[docs/FAILOVER-DRILLS.md](docs/FAILOVER-DRILLS.md) for methodology, per-drill
+loss numbers, and the A/A firewall grey-failure finding.
 
-## Deploy sequence
+## Requirements
+
+- A Linux host with **bare-metal KVM** (`/dev/kvm`), ~48 vCPU / ~128 GB RAM
+  comfortable (each Cumulus VX is a 2 vCPU / 4 GB VM; each PA-VM runs 8 vCPU / 16 GB).
+  Reference host: 96 cores / 314 GB.
+- docker, containerlab (built on 0.78.2), git, curl, zstd, python3, sshpass.
+- A [vrnetlab](https://github.com/hellt/vrnetlab) checkout (2025-07 or later: needs `nvidia/cumulus-vx`).
+- **Two VM images you must supply** (licensed, not distributed here, gitignored):
+  - `cumulus-linux-5.12.0-vx-amd64-qemu.qcow2` — NVIDIA no longer distributes VX; you need an existing copy.
+  - `PA-VM-KVM-12.1.2.qcow2` — from your Palo Alto support account.
+
+## Quick start
+
 ```bash
-# 0) images  (or just: ./build_images.sh) (qcow2s already staged on home-eve:/root/containerlab/ecloud/images/)
-cd /root/containerlab/vrnetlab      # already checked out; updated to 2026-07-23 (has nvidia/cumulus-vx)
-cp /root/containerlab/ecloud/images/cumulus-linux-5.12.0-vx-amd64-qemu.qcow2 nvidia/cumulus-vx/ && (cd nvidia/cumulus-vx && make)
-cp /root/containerlab/ecloud/images/PA-VM-KVM-12.1.2.qcow2 paloalto/pan/ && (cd paloalto/pan && make)
-#    -> vrnetlab/nvidia_cumulus-vx:5.12.0 , vrnetlab/vr-pan:12.1.2
-
-# 1) deploy: EVERYTHING bootstraps from first boot. Nothing to push.
-sudo containerlab deploy -t ecloud.clab.yml
-#    switches healthy + BGP/EVPN converged ~4 min, host LACP formed ~6 min, PANs configured ~20 min
+git clone <this repo> ecloud && cd ecloud
+mkdir images   # put the two qcow2s here
 ```
-(`push_configs.sh` remains as a manual fallback only.)
 
-## First-boot bootstrap (how every node self-configures on `clab deploy`)
+**1) Host prerequisites (once):**
 
-| Node type | Mechanism | Time to ready |
+```bash
+# bonding module (the k8s hosts build 802.3ad bonds)
+echo bonding | sudo tee /etc/modules-load.d/clab-bonding.conf && sudo modprobe bonding
+# the shared "internet" segment: clab's bridge kind attaches to an EXISTING host bridge
+sudo cp host-services/clab-internet-bridge.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now clab-internet-bridge
+```
+
+Two host-specific caveats to check:
+- If your docker runs with `"iptables": false`, containers have no egress; add MASQUERADE
+  rules for the docker/clab subnets (only the *builds* need internet; the lab itself is airgapped).
+- If `172.29.129.0/24` (the lab mgmt subnet) collides with an existing route on your host
+  (VPN, Tailscale subnet route, ...), pin it local:
+  `ip rule add to 172.29.129.0/24 lookup main priority 5100`.
+  Or change `mgmt.ipv4-subnet` via `build_clab.py`.
+
+**2) Patch vrnetlab + build the VM images (~15 min):**
+
+The stock launchers cannot bootstrap these NOS versions. The patches in this repo fix that
+(details in the launcher-patches section below):
+
+```bash
+python3 cvx_startup_config.patch.py /root/containerlab/vrnetlab/nvidia/cumulus-vx/docker/launch.py
+python3 pan_panos12.patch.py       /root/containerlab/vrnetlab/paloalto/pan/docker/launch.py
+VR=/root/containerlab/vrnetlab ./build_images.sh   # also fetches the GoBGP binaries
+```
+
+**3) Build the k8s host image (~5 min, needs internet):**
+
+```bash
+k8s/build-k8s-image.sh    # downloads k3s + airgap images + Cilium, builds ecloud-k8s-host:1.31.5
+```
+
+**4) Deploy. That's it:**
+
+```bash
+sudo containerlab deploy -t ecloud.clab.yml
+```
+
+Nothing to push, nothing to configure. Optional: install the ES-bond watchdog
+(`host-services/`, see below) for long-running labs.
+
+## Verify
+
+```bash
+# fabric: all 8 leaf uplinks Established on a spine (~4 min after deploy)
+docker exec clab-ecloud-spine-1 sshpass -p 'Clab123!' ssh cumulus@127.0.0.1 \
+  'sudo vtysh -c "show bgp l2vpn evpn summary"'
+
+# k8s: DC1 6 Ready, DC2 4 Ready (~12 min)
+ssh admin@clab-ecloud-k8s-master-1        # password: admin, then: kubectl get nodes
+
+# GoBGP brain: health + per-VIP steering decisions
+docker exec clab-ecloud-gobgp-1 cat /run/gobgp-brain-status.json
+
+# the money shot (~20 min, once the firewalls are healthy):
+docker exec clab-ecloud-client-1 curl http://app.ecloud.lab/api/whoami   # -> DC1 pod identity
+docker exec clab-ecloud-client-1 curl http://dc2.ecloud.lab/api/whoami   # -> DC2 pod identity
+docker exec clab-ecloud-client-1 curl http://10.80.15.54/api/whoami      # -> DC2 (static per-client steering)
+# rich-app extras: the docs page, the cross-region consumer, the live path trace
+docker exec clab-ecloud-client-1 curl -o /dev/null -w '%{size_download}\n' http://10.80.15.50/docs   # 463907 bytes
+docker exec clab-ecloud-client-1 curl 'http://10.80.15.51/api/consume?region=DC2'  # DC1 pod fetches DC2 over the backbone
+docker exec clab-ecloud-client-1 curl 'http://10.80.15.51/api/trace?region=DC2'    # hop-by-hop east-west path
+```
+
+## Access
+
+| What | How | Credentials |
 |---|---|---|
-| 20 Cumulus switches | `startup-config: bootstrap/<name>.cfg` (filtered nv-set) applied over SSH by the patched launcher once switchd is up; EVPN-MH leaves then self-reboot + `evpn mh redirect-off` | ~2 min spines/borders, ~4 min ES leaves, LACP formed ~6 min |
-| 16 hosts | `linux` kind + `exec: sh /bootstrap/<name>.sh` (bind-mounted): bond0 802.3ad fast-LACP l3+4 MTU9000 over eth1/eth2 = the real netplan; clients on the `internet` bridge; gobgp routed /30s | seconds |
-| 2 Palo Altos | `startup-config: bootstrap/fw-*.xml` = the FULL live `<config>` (46KB) loaded via the API by the patched launcher: phase 1 set jumbo-frame + commit + QEMU reset; phase 2 wait auto-commit, load config, commit | ~20 min (PAN-OS 12 boots twice) |
+| Cumulus switches | `ssh cumulus@<mgmt-ip>` or `docker exec <c> sshpass -p 'Clab123!' ssh cumulus@127.0.0.1` | `cumulus` / `Clab123!` (also `admin` / `admin`, the VSCode extension's default) |
+| Hosts, k8s nodes, clients, gobgp | `ssh admin@clab-ecloud-<name>` | `admin` / `admin` (also `user` and `root` / `Test123`) |
+| kubectl | on any master, as any user | preconfigured (`KUBECONFIG` + symlink) |
+| PA-VM | HTTPS/XML-API on its mgmt IP | `admin` / `Admin@123` |
+| GoBGP | `docker exec clab-ecloud-gobgp-1 gobgp global rib` | - |
 
-Verified hands-off from a cold deploy: 20/20 switches healthy + BGP/EVPN converged, all ES bonds up,
-host LACP partner = the leaf pair's ESI system-mac (`44:38:39:be:ef:1x`), hosts ping their anycast gateway.
+**Passwordless SSH**: run `host-services/push-ssh-keys.sh` once. It installs the host's
+ed25519 key on every running device AND stages it into `bootstrap/hosts/authorized_keys`,
+which every later deploy installs at first boot (hosts via the bind mount, switches via
+the patched launcher, firewalls folded into the config commit).
 
-### Launcher patches (re-applied from pristine by the `*.patch.py`; resulting launchers kept as `*.patched`)
-- `cvx_startup_config.patch.py` (Cumulus): (1) apply startup-config over SSH; (2) fix an UPSTREAM bug
-  where `_switchd_is_ready` compared a str regex match to `b"active"`, so no VX node ever became
-  running/healthy; (3) EVPN-MH: reboot once after config, then `redirect-off` + write mem; (4)
-  overlay-reuse login (stock sends the factory password on a reused overlay: "Login incorrect", wedged).
-- `pan_panos12.patch.py` (PAN-OS 12): (1) nudge newlines after the forced password change (no prompt is
-  emitted otherwise); (2) liberal `admin@[^>]*>` prompt; (3) send `show jobs processed` BEFORE the
-  blocking expect (the scrapli console read blocks up to 3600s on a silent console); (4) XML
-  startup-config via API import / load config from / commit; (5) jumbo-frame needs a REBOOT to become
-  active: phase 1 + QEMU `system_reset` (the API restart is a no-op on PAN-OS 12) + real down/up
-  detection + wait for the post-reboot auto-commit before committing.
-- Per-node env on the PAN kind: `QEMU_CPU: host` (clab hard-codes qemu64; PAN-OS 12 needs x86-64-v2),
-  `QEMU_SMP: 8`, `QEMU_MEMORY: 16384` (vrnetlab's 2 vCPU / 6 GB drops PAN-OS 12 into the Maintenance
-  Recovery Tool; the working EVE PANs run 8 / 16 GB).
-- Why XML for the PAN: replaying the set-format export line by line fails silently (lines are validated
-  as entered and the export is not in dependency order; the launcher still says "Startup complete" but
-  the running config is empty). `pan_xml_extract.py` builds the loadable XML from op-mode
-  `show config running` (NOT `configure; show`, which splits into per-section envelopes and omits vsys).
+Mgmt IPs are static (`172.29.129.11-.48`, mapped in `ecloud.clab.yml`); clab also writes
+`/etc/hosts` entries so container names resolve from the host.
 
-### Operational gotchas
-- Recreating ONE node makes clab recreate its link-peers (no hot-plug on VM kinds). Safe now thanks to
-  the overlay-reuse fix, but expect neighbours to reboot.
-- A node's `cumulus_overlay.qcow2` persists in the labdir across `docker rm`; `rm -rf clab-ecloud` for a
-  true clean slate.
-- Host prerequisites (all persisted): `bonding` module, the `internet` bridge (`clab-internet-bridge.service`),
-  container egress NAT (`clab-container-nat.service`, because docker runs `iptables:false` on this host).
-- Reach the VMs via `docker exec <c> sshpass -p Clab123! ssh cumulus@127.0.0.1` (Cumulus) or the XML API
-  from inside the container with `uv run --no-project python3` (PAN). Mgmt IPs are not routable from the
-  host shell.
+## Repo layout
 
-## Known gaps / next steps
-- **Kubernetes itself is not yet stood up on the host containers** (kind/kubeadm + Cilium BGP + LB pools
-  + dc-demo), nor BIND on the svc nodes, nor the GoBGP brain. Hosts have their L2/L3 identity from first
-  boot; the k8s control plane is the next layer.
-- Consider `k8s-kind` for the clusters instead of ubuntu containers if a full kubeadm-in-container
-  bootstrap proves painful (kind nodes are containers already; Cilium BGP peers to the leaf).
+```
+ecloud.clab.yml            the topology (GENERATED: edit build_clab.py / hosts.py, then regenerate)
+build_clab.py              generator; holds the authoritative link map (84 links captured from the
+                           original EVE-NG lab, none inferred) + name/interface mapping
+hosts.py                   generator for every host's first-boot script + the DNS zone
+bootstrap/                 what the lab boots from:
+  <switch>.cfg               per-switch nv-set config (filtered live captures)
+  fw-pri.xml, fw-sec.xml     full PAN <config> XML (sanitized: no users/certs/secrets)
+  hosts/<host>.sh            per-host first-boot scripts (bond/IP/route/SSH/daemons)
+  hosts/gobgp/               gobgpd.conf + brain.json per node, controller_brain.py (binaries fetched)
+  hosts/svc/                 dnsmasq zone + host records
+k8s/                       the ecloud-k8s-host image: Dockerfile, PID-1 entrypoint,
+                           cluster-bootstrap (Cilium+BGP+app+VIPs), manifests, asset fetcher
+cvx_startup_config.patch.py  \  vrnetlab launcher patches (apply to a pristine checkout;
+pan_panos12.patch.py         /  *.patched = the resulting launchers, for reference)
+pan_xml_extract.py         builds a loadable sanitized XML from a live PAN (op-mode show config running)
+host-services/             internet-bridge unit + the ES-bond flap watchdog (see its README)
+push_configs.sh            manual fallback only; the launcher path makes it unnecessary
+configs/                   raw nv config captures the bootstrap configs were filtered from (reference)
+ecloud-fabric.clab.yml     fabric-only subset (20 switches, no hosts/FWs), for quick fabric work
+```
+
+## How the tricky parts work
+
+**Cumulus VX under containerlab** (`nvidia_cumulusvx` kind = VX as a QEMU VM in a
+container, via vrnetlab). The stock launcher does not apply `startup-config` at all, and
+has a bug where no VX node ever reports healthy (`_switchd_is_ready` compares a str to
+bytes). `cvx_startup_config.patch.py` fixes both, replays the nv-set config over SSH once
+switchd is up, and for EVPN-MH leaves does the required one-time reboot +
+`evpn mh redirect-off`. It also handles reused overlay disks (stock wedges on the factory
+password) which makes single-node recreation safe.
+
+**PAN-OS 12 under vrnetlab**: needs `QEMU_CPU: host` (PAN-OS 12 requires x86-64-v2;
+clab hard-codes qemu64) and 8 vCPU / 16 GB (at vrnetlab's 2/6 it boots into the recovery
+tool) — both set per-node in the topology. Set-format config replay fails silently
+(dependency order), so the launcher imports a full sanitized `<config>` XML via the API:
+phase 1 enables jumbo-frame mode + reboots (an operational toggle; the API restart is a
+no-op on PAN-OS 12, so it uses QEMU system_reset), phase 2 waits for the auto-commit,
+loads per-section partial merges, validates, commits.
+
+**Kubernetes in a privileged container** (the kind/k3d problem): the `ecloud-k8s-host`
+image's PID-1 entrypoint evacuates the cgroup-v2 root into `init.scope` and delegates
+controllers before launching k3s (`--snapshotter=native`, no flannel/kube-proxy/servicelb).
+Everything is airgapped: the nodes' default route points into the fabric, deliberately, so
+all images ship inside the host image. The entrypoint also removes docker's eth0 mgmt
+default route (else cross-subnet replies leak out the wrong interface and blackhole) and
+is hardened to never exit (a PID-1 exit makes docker recreate the netns and the clab-wired
+interfaces are gone until redeploy).
+
+**GoBGP controller**: gobgpd speaks iBGP to both backbone switches with an
+export-anycast-only policy; the brain injects each VIP with next-hop = the winning DC's
+regional VIP, which the backbone resolves recursively. The backbone side carries a
+deny-anycast-out filter toward the DCs to prevent re-advertisement loops. One subtlety:
+gobgpd does not program the kernel FIB, so the bootstrap adds a static fabric route for
+the VIP range (else the brain's health checks would follow the mgmt default and blackhole).
+
+## Known behaviors (Cumulus VX, not this lab)
+
+- EVPN-MH ES bonds converge only after the leaf's post-config reboot; LACP takes 2-3 min.
+- Occasionally an ES bond gets stuck carrier-down; only a leaf reboot recovers it.
+  `host-services/es-bond-watchdog` detects the flap signature (one bond down while
+  siblings are up) and reboots that leaf, with grace + cooldown. Zero false positives
+  across cold deploys in testing.
+- Recreating one VM node makes clab recreate its link-peers (no hot-plug), and a
+  partially reconciled deploy can leave broken veths. For anything beyond a single
+  access leaf, prefer a clean `clab destroy --cleanup && clab deploy` (the lab's
+  ~20 min hands-off rebuild makes this cheap).
+- A node's overlay qcow2 persists in the labdir across `docker rm`; delete the labdir
+  (`clab-ecloud/`) for a true clean slate.
+
+## Credits
+
+Built on [containerlab](https://containerlab.dev) and [hellt/vrnetlab](https://github.com/hellt/vrnetlab)
+(launcher patches in this repo), [k3s](https://k3s.io), [Cilium](https://cilium.io),
+[GoBGP](https://github.com/osrg/gobgp), dnsmasq. The topology replicates a physical-style
+EVE-NG POC (EVPN-VXLAN multihoming per NVIDIA's Cumulus reference design).
