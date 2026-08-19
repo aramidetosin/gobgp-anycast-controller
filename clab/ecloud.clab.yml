@@ -10,7 +10,7 @@
 name: ecloud
 mgmt:
   network: ecloud-mgmt
-  ipv4-subnet: 172.29.129.0/24     # same mgmt /24 as the EVE lab, but STATIC (no DHCP drift)
+  ipv4-subnet: 172.29.129.0/24     # static mgmt /24 (override: CLAB_MGMT_PREFIX)
 topology:
   kinds:
     nvidia_cumulusvx:
@@ -18,7 +18,7 @@ topology:
     paloalto_panos:
       image: vrnetlab/paloalto_pa-vm:12.1.2
     linux:
-      image: ghcr.io/srl-labs/network-multitool
+      image: ghcr.io/srl-labs/network-multitool@sha256:5013e4b58ec2d72affad2c3adc4ee807157efe452d31022e87317d00e94620f4
   nodes:
     spine-1:
       kind: nvidia_cumulusvx

@@ -75,10 +75,14 @@ sudo systemctl daemon-reload && sudo systemctl enable --now clab-internet-bridge
 Two host-specific caveats to check:
 - If your docker runs with `"iptables": false`, containers have no egress; add MASQUERADE
   rules for the docker/clab subnets (only the *builds* need internet; the lab itself is airgapped).
-- If `172.29.129.0/24` (the lab mgmt subnet) collides with an existing route on your host
-  (VPN, Tailscale subnet route, ...), pin it local:
-  `ip rule add to 172.29.129.0/24 lookup main priority 5100`.
-  Or change `mgmt.ipv4-subnet` via `build_clab.py`.
+- If `172.29.129.0/24` (the lab mgmt subnet) collides with something on your host, you have
+  two options. A *routing* collision (VPN, Tailscale subnet route) is fixed by pinning it local:
+  `ip rule add to 172.29.129.0/24 lookup main priority 5100`. A *local bridge* collision (e.g.
+  running on an EVE-NG box, whose `nat0` cloud IS 172.29.129.0/24) is handled automatically:
+  `build_clab.py` checks the host's local interfaces and moves to the next free /24 (172.29.140
+  first) by itself. Every mgmt IP keeps its last octet, so `.11` is still spine-1; the chosen
+  subnet is printed when you regenerate. To force one: `CLAB_MGMT_PREFIX=x.y.z`, or drop the
+  prefix into a `.mgmt-prefix` file next to the script.
 
 **2) Patch vrnetlab + build the VM images (~15 min):**
 
@@ -124,7 +128,7 @@ docker exec clab-ecloud-client-1 curl http://app.ecloud.lab/api/whoami   # -> DC
 docker exec clab-ecloud-client-1 curl http://dc2.ecloud.lab/api/whoami   # -> DC2 pod identity
 docker exec clab-ecloud-client-1 curl http://10.80.15.54/api/whoami      # -> DC2 (static per-client steering)
 # rich-app extras: the docs page, the cross-region consumer, the live path trace
-docker exec clab-ecloud-client-1 curl -o /dev/null -w '%{size_download}\n' http://10.80.15.50/docs   # 463907 bytes
+docker exec clab-ecloud-client-1 curl -o /dev/null -w '%{size_download}\n' http://10.80.15.50/docs   # ~464 KB
 docker exec clab-ecloud-client-1 curl 'http://10.80.15.51/api/consume?region=DC2'  # DC1 pod fetches DC2 over the backbone
 docker exec clab-ecloud-client-1 curl 'http://10.80.15.51/api/trace?region=DC2'    # hop-by-hop east-west path
 ```
